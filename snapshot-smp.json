@@ -1,0 +1,25 @@
+{
+ "globals": {
+  "icount": 10456,
+  "g_ncore": 10112,
+  "g_ipi_pending": 10120,
+  "g_cpu_st": 8352,
+  "tsc": 1649136,
+  "g_xmm_lo": 1649232,
+  "g_xmm_hi": 1649744,
+  "mem": 10184
+ },
+ "ccpu": {
+  "stride": 440,
+  "reg": 0,
+  "rip": 128,
+  "rfl": 136,
+  "fpr": 232,
+  "fsp": 296,
+  "x87_cw": 304,
+  "x87_sw": 312,
+  "fsbase": 320,
+  "gsbase": 328
+ },
+ "xmmStride": 128
+}
