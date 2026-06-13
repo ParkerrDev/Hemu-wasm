@@ -58,8 +58,8 @@ inst.exports.__main();
 const ICOUNT = G("icount"), NCORE = rd(G("g_ncore")), IPI = G("g_ipi_pending");
 // set up each AP's jit with ITS core's CCpuState offsets (the APs never call __jit_state themselves)
 { const CST2 = G("g_cpu_st"), ST = 440, oc = (k, o) => CST2 + k * ST + o;
-  const TSC = G("tsc"), XLO = G("xmm_lo"), XHI = G("xmm_hi"), RM = inst.exports.RdMem, WM = inst.exports.WrMem, RH = inst.exports.RasterHLE, MM = inst.exports.memory;
-  for (let k = 1; k < NCORE; k++) { jits[k].jitState(oc(k, 0), oc(k, 136), oc(k, 128), gBase, MM, RM, WM, RH); jits[k].jitX87(oc(k, 232), oc(k, 296), oc(k, 312)); jits[k].jitSeg(oc(k, 320), oc(k, 328), TSC, oc(k, 304), XLO, XHI); } }
+  const TSC = G("tsc"), XLO = G("g_xmm_lo"), XHI = G("g_xmm_hi"), RM = inst.exports.RdMem, WM = inst.exports.WrMem, RH = inst.exports.RasterHLE, MM = inst.exports.memory;
+  for (let k = 1; k < NCORE; k++) { jits[k].jitState(oc(k, 0), oc(k, 136), oc(k, 128), gBase, MM, RM, WM, RH); jits[k].jitX87(oc(k, 232), oc(k, 296), oc(k, 312)); jits[k].jitSeg(oc(k, 320), oc(k, 328), TSC, oc(k, 304), XLO + k * 128, XHI + k * 128); } }   // XMM now per-core: g_xmm_lo[k] base = G("g_xmm_lo")+k*128 (16 U64)
 const SP_BASE = 0x1000000, setCore = (k) => { inst.exports.__core.value = BigInt(k); inst.exports.__sp.value = BigInt(SP_BASE - k * 0x100000); };
 const sleep = (ms) => new Promise((rr) => setTimeout(rr, ms));
 const perCore = new Array(NCORE).fill(0);
@@ -89,6 +89,10 @@ console.log("launched Talons; running multi-core...");
 const FR = Number(process.env.FR || 400);
 for (let c = 0; c < FR; c++) { await step(); if (c % 40 === 0) { const t = screen(); console.log(`  f${c} ic=${((rd(ICOUNT)-ic0)/1e9).toFixed(1)}B AP1=${(perCore[1]/1e6).toFixed(0)}M init=${/nitializ/.test(t)?"Y":"n"} | ${(t.split("\n")[0]||"").slice(0,36)}`); } if (bad) break; }
 if (lastFrame) dumpPng("/tmp/smp_talons.png", lastFrame.u8.subarray(lastFrame.a, lastFrame.a + lastFrame.w * lastFrame.h), lastFrame.w, lastFrame.h);
+// per-core XMM usage: if any AP region (k>=1) is nonzero, the panel workers DO touch XMM (so per-core XMM matters)
+{ const XB = G("g_xmm_lo"); for (let k = 0; k < NCORE; k++) { let nz = 0; for (let i = 0; i < 16; i++) if (rd(XB + k * 128 + i * 8)) nz++; console.log(`  core ${k} XMM nonzero regs: ${nz}/16`); } }
+// full HUD text (so we can read the Height telemetry line without the PNG)
+console.log("=== screen ===\n" + screen() + "\n=== /screen ===");
 console.log(`AP JIT: ${globalThis.apJitN} block-runs, ${(globalThis.apJitInstr/1e9).toFixed(2)}B native instr, ${globalThis.apMiss} interp/miss`);
 console.log("=== Talons on multi-core ===");
 console.log("IPI slots ever pending: 0b" + ipiMask.toString(2).padStart(NCORE, "0"));
