@@ -4,7 +4,12 @@
 // Decisive question: do all cores cooperate so the multi-core desktop renders (present fires)?
 import { compileHolyC } from "../holyc-wasm/src/compiler.js";
 import { createHost } from "../holyc-wasm/src/runtime/host.js";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { deflateSync } from "node:zlib";
+const PAL=[[0,0,0],[0,0,0xaa],[0,0xaa,0],[0,0xaa,0xaa],[0xaa,0,0],[0xaa,0,0xaa],[0xaa,0x55,0],[0xaa,0xaa,0xaa],[0x55,0x55,0x55],[0x55,0x55,0xff],[0x55,0xff,0x55],[0x55,0xff,0xff],[0xff,0x55,0x55],[0xff,0x55,0xff],[0xff,0xff,0x55],[0xff,0xff,0xff]];
+function crc32(b){let c=~0;for(let i=0;i<b.length;i++){c^=b[i];for(let k=0;k<8;k++)c=(c>>>1)^(0xEDB88320&-(c&1));}return ~c>>>0;}
+function chunk(t,d){const l=Buffer.alloc(4);l.writeUInt32BE(d.length);const tt=Buffer.from(t,"latin1");const cr=Buffer.alloc(4);cr.writeUInt32BE(crc32(Buffer.concat([tt,d])));return Buffer.concat([l,tt,d,cr]);}
+function dumpPng(p,idx,w,h){const raw=Buffer.alloc((w*3+1)*h);let o=0;for(let y=0;y<h;y++){raw[o++]=0;for(let x=0;x<w;x++){const c=PAL[idx[y*w+x]&15];raw[o++]=c[0];raw[o++]=c[1];raw[o++]=c[2];}}const ih=Buffer.alloc(13);ih.writeUInt32BE(w,0);ih.writeUInt32BE(h,4);ih[8]=8;ih[9]=2;writeFileSync(p,Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk("IHDR",ih),chunk("IDAT",deflateSync(raw)),chunk("IEND",Buffer.alloc(0))]));}
 const RAMSZ = 402653184;
 const liveBuf = readFileSync("/tmp/hemusnap/live-smp.bin");
 const diskBuf = readFileSync("/tmp/templeos.raw");
@@ -23,7 +28,8 @@ const host = createHost({ onText: (s) => { if (s && s.indexOf("BADOP") >= 0) { b
   snapLoad: (base, u8) => { gBase = base; u8.set(liveBuf.subarray(0, RAMSZ), base); },
   diskRead: (lba, cnt, u8, dst) => { for (let s = 0; s < cnt; s++) { const o = ovl.get(lba + s); if (o) u8.set(o, dst + s * 512); else u8.set(diskBuf.subarray((lba + s) * 512, (lba + s) * 512 + 512), dst + s * 512); } },
   diskWrite: (lba, cnt, u8, src) => { for (let s = 0; s < cnt; s++) ovl.set(lba + s, u8.slice(src + s * 512, src + s * 512 + 512)); },
-  present: (a, w, h, u8) => { if (!measuring) return; let nz = 0; for (let i = 0; i < w * h; i++) if (u8[a + i]) nz++; present++; nonblack = nz / (w * h); } });
+  present: (a, w, h, u8) => { if (!measuring) return; let nz = 0; for (let i = 0; i < w * h; i++) if (u8[a + i]) nz++; present++; nonblack = nz / (w * h); lastFrame = { a, w, h, u8: u8.slice(a, a + w * h) }; } });
+let lastFrame = null;
 host.env.__host_msx = () => BigInt(mx); host.env.__host_msy = () => BigInt(my); host.env.__host_msb = () => BigInt(mb); host.env.__host_wheel = () => 0n;
 host.env.__host_key = () => keyq.length ? BigInt(keyq.shift()) : -1n; host.env.__host_prof = () => {};
 host.env.__host_budget = () => 4000000n; host.env.__host_dt = () => 16n;
@@ -64,4 +70,5 @@ console.log(`=== interleaved ${NCORE}-core, ${wall.toFixed(1)}s, ${macro} macro-
 console.log(`present frames: ${present} (${(present/wall).toFixed(1)}/s), last non-black: ${(nonblack*100).toFixed(1)}%  ${bad ? "BADOP!" : "(no fault)"}`);
 console.log(`IPIs delivered to APs: ${ipiSeen}`);
 for (let k = 0; k < NCORE; k++) console.log(`  core ${k}: ${perCore[k].toLocaleString()} instr executed (${k ? "AP, IPI-woken" : "BSP/devices"})`);
+if (lastFrame) { dumpPng("/tmp/smp_desktop.png", lastFrame.u8, lastFrame.w, lastFrame.h); console.log("wrote /tmp/smp_desktop.png"); }
 process.exit(bad ? 1 : 0);
