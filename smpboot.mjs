@@ -7,11 +7,14 @@ import { createHost } from "../holyc-wasm/src/runtime/host.js";
 import * as jit from "./jit.js";
 import { readFileSync } from "node:fs";
 const RAMSZ = 402653184;
-const liveBuf = readFileSync("/tmp/live.bin");
+const SMPSNAP = !!process.env.SMPSNAP;     // SMPSNAP=1 -> multi-core snapshot (g_cpu_st[0..N], live-smp.bin)
+const liveBuf = readFileSync(SMPSNAP ? "/tmp/hemusnap/live-smp.bin" : "/tmp/live.bin");
 const diskBuf = readFileSync("/tmp/templeos.raw");
+const CORE = BigInt(process.env.CORE || 0);
 const dir = "./src";
 const src = readFileSync(dir + "/snapshot.HC", "latin1");
 const r = compileHolyC(src, { filename: "snapshot.HC", lenient: false, sharedMemory: true,
+  defines: SMPSNAP ? { SMP_SNAP: "1" } : {},
   includeResolver: (p) => { try { return readFileSync(dir + "/" + p, "latin1"); } catch { return null; } } });
 const G = (n) => Number(r.globals.get(n).addr);
 const ICOUNT = G("icount");
@@ -41,7 +44,7 @@ jit.jitReset();
 inst = await WebAssembly.instantiate(mod, { env: host.env });
 console.log("exports has __core:", "__core" in inst.exports, " __sp:", "__sp" in inst.exports, " memory===shared:", inst.exports.memory === sharedMem);
 inst.exports.__sp.value = 0x1000000n;     // STACK_TOP (16MiB) — this worker's shadow stack
-inst.exports.__core.value = 0n;           // worker 0
+inst.exports.__core.value = CORE;         // which core this worker runs
 host.attach(inst); inst.exports.__rt_init();
 const dv = () => new DataView(inst.exports.memory.buffer);
 const rdU64 = (a) => Number(dv().getBigUint64(a, true));
@@ -54,5 +57,5 @@ const step = async () => { const now = performance.now(); dtAcc += now - lastT; 
 const run = async (n) => { for (let i = 0; i < n; i++) await step(); };
 await run(150); measuring = true; const ic0 = rdU64(ICOUNT); const t0 = performance.now();
 await run(240); const wall = (performance.now() - t0) / 1000;
-console.log(`SHARED-MEM DESKTOP: ${(distinct / wall).toFixed(1)} distinct fps, ${(lastNz * 100).toFixed(0)}% non-black, ${((rdU64(ICOUNT) - ic0) / wall / 1e6).toFixed(0)} MIPS ${bad ? "BADOP!" : "(no fault)"}`);
+console.log(`${SMPSNAP ? "SMP-SNAP core " + CORE : "SHARED-MEM"} DESKTOP: ${(distinct / wall).toFixed(1)} distinct fps, ${(lastNz * 100).toFixed(0)}% non-black, ${((rdU64(ICOUNT) - ic0) / wall / 1e6).toFixed(0)} MIPS ${bad ? "BADOP!" : "(no fault)"}, g_ncore=${rdU64(G("g_ncore"))}`);
 process.exit(bad ? 1 : 0);
