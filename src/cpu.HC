@@ -114,14 +114,24 @@ U64 hpet_base;                       // discovered base of the HPET alias
 U64 MmioRd(U64 a, I64 sz)
 {
   U64 off; off = a & 0xFFF;
-  if (off == 0x20)  return 0;                 // LAPIC APIC_ID -> CPU 0
+  if (off == 0x20)  return MyCore() << 24;    // LAPIC APIC_ID register (id in bits 24-31) -> THIS core
   if (off == 0x30)  return 0x50014;           // LAPIC version
   if (off == 0xF0)  return hpet_ctr;          // HPET main counter (lo) — also LAPIC SVR read
   if (off == 0xF4 || off == 0xF8) return hpet_ctr >> 32;  // HPET main counter (hi)
   return 0; }
 U0 MmioWr(U64 a, I64 sz, U64 v)
 {
-  // LAPIC EOI / config writes: acknowledged, no state to keep for a single-CPU desktop.
+  // SMP: the runtime inter-processor wakeup. TempleOS's MPInt writes ICR_HIGH (dest apic_id<<24)
+  // then ICR_LOW (delivery mode + vector) to send a directed fixed IPI (I_WAKE) to an idle AP.
+  U64 off; off = a & 0xFFF;
+  if (off == 0x310) { g_icr_high[MyCore()] = v; return; }   // ICR_HIGH: destination
+  if (off == 0x300) {                                        // ICR_LOW: fire
+    I64 dest = g_icr_high[MyCore()] >> 24;                   // dest apic_id (== core slot)
+    I64 dm = (v >> 8) & 7;                                   // delivery mode (0=fixed)
+    if (dm == 0 && dest >= 0 && dest < g_ncore && dest != MyCore())
+      g_ipi_pending[dest] = (v & 0xFF) | 0x100;             // mark this AP's pending wake-vector (|0x100 = nonzero)
+    return; }
+  // other LAPIC EOI / config writes: acknowledged, no state to keep.
 }
 
 //---------------------------------------------------------------- guest memory
@@ -1065,6 +1075,20 @@ U0 RunTo(U64 target, I64 budget)       // run until rip==target (used to HLE-cal
 U0 CallGuest(U64 fn)
 { U64 sentinel = 0x7FF0; reg[4] -= 8; WrMem(reg[4], 8, sentinel); rip = fn; halted = 0; RunTo(sentinel, 80000000); }
 
+// SMP: run THIS core (APs) for up to `budget` instructions, pure-interpreter, NO device ticks
+// (devices are core 0's job). Delivers a pending I_WAKE IPI as an interrupt (wakes a HLT'd AP);
+// stops early when the core goes idle (HLT) with nothing pending, yielding to the orchestrator.
+U0 RunCore(I64 budget)
+{
+  I64 lim = icount + budget, ip;
+  while (icount < lim) {
+    if (halted >= 2) break;                                       // fault
+    ip = g_ipi_pending[MyCore()];
+    if (ip && (rfl & F_IF)) { g_ipi_pending[MyCore()] = 0; halted = 0; DoInt(ip & 0xFF, 0, 0); }
+    if (halted == 1) break;                                       // idle (HLT), no deliverable IPI -> yield
+    Step(); icount++;
+  }
+}
 U0 Run(I64 maxi)                       // run until icount==maxi (or a fault halts us)
 {
   while (icount < maxi) {
