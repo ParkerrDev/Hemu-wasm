@@ -56,6 +56,7 @@ CCpuState g_cpu_st[NCORES];
 #define ea         g_cpu_st[MyCore()].f_ea
 #define xmm_lo     g_xmm_lo[MyCore()]   // SSE XMM regs per-core (arrays declared in cpu.HC); like x87, must not be shared across cores
 #define xmm_hi     g_xmm_hi[MyCore()]
+#define lockf      g_lockf[MyCore()]    // per-core: current instruction had a LOCK prefix (atomic RMW on shared mem)
 I64 g_ncore;                            // # of active cores (set by SetSnapRegs; 0/1 = single-core)
 U64 g_ipi_pending[NCORES];              // SMP: per-core pending IPI vector (0=none; runtime I_WAKE wakes APs)
 U64 g_icr_high[NCORES];                 // SMP: each core's last LAPIC ICR_HIGH write (dest apic_id<<24)
