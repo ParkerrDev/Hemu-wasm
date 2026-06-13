@@ -59,6 +59,7 @@ I64 tsc_rate;                        // TSC ticks added per executed instruction
                                      // time freezes. The snapshot restores tsc + sets tsc_rate.
 U64 msr_efer, msr_star, msr_lstar, msr_sfmask, msr_kgsbase, msr_apic;   // msr_fsbase/msr_gsbase moved into CCpuState (per-core)
 U64 g_xmm_lo[NCORES][16], g_xmm_hi[NCORES][16];   // SSE XMM registers — PER-CORE (xmm_lo/xmm_hi #defines in snapshot.HC): an AP suspended mid-XMM must not be clobbered by another core
+I64 g_lockf[NCORES];                  // PER-CORE: 1 = the current instruction had a 0xF0 LOCK prefix (lockf #define in snapshot.HC) — makes the RMW atomic on shared memory
 // fsc/fpr/fsp/x87_cw/x87_sw moved into CCpuState (per-core)
 // devices: dual 8259 PICs + 8254 PIT (channel 0 -> IRQ0 = the scheduler tick)
 I64 pic1_base, pic1_mask, pic1_irr, pic1_isr, pic1_initstep; I64 pic2_base, pic2_mask, pic2_irr, pic2_isr, pic2_initstep; I64 pit_reload, pit_div, pit_counter, pit_wlo;
@@ -588,13 +589,31 @@ F64 SqrtF64(F64 d)   { return __pow(d, 0.5); }
 U64 RdXmm64()        { if (isMem) return RdMem(ea, 8); return xmm_lo[rm]; }  // low 64 of xmm/m64
 
 //---------------------------------------------------------------- two-byte (0F) opcodes
+//---------------------------------------------------------------- LOCK atomics (SMP)
+// Atomic RMW on guest address `a` (host linear addr = mem + a). Native WASM atomics (0xFE family
+// via the holyc-wasm __a_* intrinsics) -> real cross-core atomicity over shared memory. Each
+// returns the OLD value. Caller guards alignment (atomics trap on misaligned >1-byte access).
+U64 AtomOr(U64 a, U64 v, I64 sz)   { if (sz==1) return __a_or8(mem+a,v);   if (sz==2) return __a_or16(mem+a,v);   if (sz==4) return __a_or32(mem+a,v);   return __a_or64(mem+a,v); }
+U64 AtomAnd(U64 a, U64 v, I64 sz)  { if (sz==1) return __a_and8(mem+a,v);  if (sz==2) return __a_and16(mem+a,v);  if (sz==4) return __a_and32(mem+a,v);  return __a_and64(mem+a,v); }
+U64 AtomXor(U64 a, U64 v, I64 sz)  { if (sz==1) return __a_xor8(mem+a,v);  if (sz==2) return __a_xor16(mem+a,v);  if (sz==4) return __a_xor32(mem+a,v);  return __a_xor64(mem+a,v); }
+U64 AtomAdd(U64 a, U64 v, I64 sz)  { if (sz==1) return __a_add8(mem+a,v);  if (sz==2) return __a_add16(mem+a,v);  if (sz==4) return __a_add32(mem+a,v);  return __a_add64(mem+a,v); }
+U64 AtomXchg(U64 a, U64 v, I64 sz) { if (sz==1) return __a_xchg8(mem+a,v); if (sz==2) return __a_xchg16(mem+a,v); if (sz==4) return __a_xchg32(mem+a,v); return __a_xchg64(mem+a,v); }
+U64 AtomCas(U64 a, U64 e, U64 v, I64 sz) { if (sz==1) return __a_cmpxchg8(mem+a,e,v); if (sz==2) return __a_cmpxchg16(mem+a,e,v); if (sz==4) return __a_cmpxchg32(mem+a,e,v); return __a_cmpxchg64(mem+a,e,v); }
+
 //---------------------------------------------------------------- bit ops (BT/BTS/BTR/BTC)
 // which: 0=BT (test only), 1=BTS (set), 2=BTR (reset), 3=BTC (complement).
 // CF := old bit. For a memory operand the bit index selects the byte (ea+bit/8),
 // so the bit string can exceed the operand width — which is how TempleOS's
 // LOCK BTS/BTR lock primitives address bits in a shared word.
 U0 DoBit(I64 which, U64 bit, I64 sz)
-{ U64 v, m; I64 asz; asz = sz; if (isMem) { ea += bit >> 3; bit &= 7; asz = 1; } else bit &= (sz * 8 - 1); v = RdRM(asz); m = 1; m <<= bit; if (v & m) rfl |= F_CF; else rfl &= ~F_CF; if (which == 1)      WrRM(asz, v | m); else if (which == 2) WrRM(asz, v & ~m); else if (which == 3) WrRM(asz, v ^ m);
+{ U64 v, m, old; I64 asz; asz = sz; if (isMem) { ea += bit >> 3; bit &= 7; asz = 1; } else bit &= (sz * 8 - 1); m = 1; m <<= bit;
+  if (lockf && isMem && which && ea < mem_size) {                  // LOCK BTS/BTR/BTC -> atomic byte RMW (the TempleOS spinlock + mp_not_done_flags primitive)
+    if (which == 1)      old = AtomOr(ea, m, asz);
+    else if (which == 2) old = AtomAnd(ea, ~m, asz);
+    else                 old = AtomXor(ea, m, asz);
+    if (old & m) rfl |= F_CF; else rfl &= ~F_CF; return;
+  }
+  v = RdRM(asz); if (v & m) rfl |= F_CF; else rfl &= ~F_CF; if (which == 1)      WrRM(asz, v | m); else if (which == 2) WrRM(asz, v & ~m); else if (which == 3) WrRM(asz, v ^ m);
 }
 
 //---------------------------------------------------------------- FXSAVE / FXRSTOR
@@ -697,14 +716,22 @@ U0 Op0F()
     case 0xB3: DecodeModRM(); DoBit(2, RdReg(rg, sz), sz); break;                // BTR r/m, r
     case 0xBB: DecodeModRM(); DoBit(3, RdReg(rg, sz), sz); break;                // BTC r/m, r
     case 0xBA: DecodeModRM(1); d = (rg & 7) - 4; b = Fetch8(); DoBit(d, b, sz); break;  // grp8 BT/S/R/C r/m,imm8
-    case 0xB0: DecodeModRM(); a = RdReg(0, 1); b = RdRM(1); r = a - b; SetSub(a, b, r, 1);   // CMPXCHG r/m8,r8
-               if (a == b) WrRM(1, RdReg(rg, 1)); else WrReg(0, 1, b); break;
-    case 0xB1: DecodeModRM(); a = RdReg(0, sz); b = RdRM(sz); r = a - b; SetSub(a, b, r, sz); // CMPXCHG r/m,r
-               if (a == b) WrRM(sz, RdReg(rg, sz)); else WrReg(0, sz, b); break;
-    case 0xC0: DecodeModRM(); a = RdReg(rg, 1); b = RdRM(1); r = a + b; SetAdd(a, b, r, 1);   // XADD r/m8,r8
-               WrReg(rg, 1, b); WrRM(1, r); break;
-    case 0xC1: DecodeModRM(); a = RdReg(rg, sz); b = RdRM(sz); r = a + b; SetAdd(a, b, r, sz); // XADD r/m,r
-               WrReg(rg, sz, b); WrRM(sz, r); break;
+    case 0xB0: DecodeModRM(); a = RdReg(0, 1);                                    // CMPXCHG r/m8,r8
+               if (lockf && isMem && ea < mem_size) b = AtomCas(ea, a, RdReg(rg, 1), 1);
+               else { b = RdRM(1); if (a == b) WrRM(1, RdReg(rg, 1)); }
+               r = a - b; SetSub(a, b, r, 1); if (a != b) WrReg(0, 1, b); break;
+    case 0xB1: DecodeModRM(); a = RdReg(0, sz);                                   // CMPXCHG r/m,r
+               if (lockf && isMem && ea < mem_size && !(ea & (sz - 1))) b = AtomCas(ea, a, RdReg(rg, sz), sz);
+               else { b = RdRM(sz); if (a == b) WrRM(sz, RdReg(rg, sz)); }
+               r = a - b; SetSub(a, b, r, sz); if (a != b) WrReg(0, sz, b); break;
+    case 0xC0: DecodeModRM(); a = RdReg(rg, 1);                                   // XADD r/m8,r8
+               if (lockf && isMem && ea < mem_size) { b = AtomAdd(ea, a, 1); WrReg(rg, 1, b); }
+               else { b = RdRM(1); WrReg(rg, 1, b); WrRM(1, a + b); }
+               r = a + b; SetAdd(a, b, r, 1); break;
+    case 0xC1: DecodeModRM(); a = RdReg(rg, sz);                                  // XADD r/m,r
+               if (lockf && isMem && ea < mem_size && !(ea & (sz - 1))) { b = AtomAdd(ea, a, sz); WrReg(rg, sz, b); }
+               else { b = RdRM(sz); WrReg(rg, sz, b); WrRM(sz, a + b); }
+               r = a + b; SetAdd(a, b, r, sz); break;
     case 0xC3: DecodeModRM(); WrRM(sz, RdReg(rg, sz)); break;                    // MOVNTI r/m,r
     case 0xA4: DecodeModRM(); DoShld(1, RdReg(rg, sz), Fetch8(), sz); break;     // SHLD r/m,r,imm8
     case 0xA5: DecodeModRM(); DoShld(1, RdReg(rg, sz), RdReg(1, 1), sz); break;  // SHLD r/m,r,CL
@@ -905,12 +932,13 @@ U0 Step()
     if (rip == g_skip_xlat){ rip = RdMem(reg[4], 8); reg[4] += 8 + 32; return; }  // skip XLAT palette convert (4 args)
     if (rip == g_skip_bg && g_game_running) { rip = RdMem(reg[4], 8); reg[4] += 8; return; }  // skip the hidden desktop redraw behind a fullscreen game
   }
-  pfx66 = 0; repf = 0; hasRex = 0; rexW = 0; rexR = 0; rexX = 0; rexB = 0; g_segbase = 0; op = mem[rip]; rip++;
+  pfx66 = 0; repf = 0; hasRex = 0; rexW = 0; rexR = 0; rexX = 0; rexB = 0; g_segbase = 0; lockf = 0; op = mem[rip]; rip++;
   while (g_pfx[op]) {                                  // legacy prefixes (one table lookup, not 11 compares)
     if (op == 0x66) pfx66 = 1; else if (op == 0xF3) repf = 1; else if (op == 0xF2) repf = 2;
     else if (op == 0x64) g_segbase = msr_fsbase;   // FS:
     else if (op == 0x65) g_segbase = msr_gsbase;   // GS:
-    op = mem[rip]; rip++;                                  // (0xF0 LOCK ignored: single vCPU)
+    else if (op == 0xF0) lockf = 1;                // LOCK: make this instruction's mem RMW atomic (SMP)
+    op = mem[rip]; rip++;
   }
   if (op >= 0x40 && op <= 0x4F) { hasRex = 1; rexW = (op >> 3) & 1; rexR = (op >> 2) & 1; rexX = (op >> 1) & 1; rexB = op & 1; op = mem[rip]; rip++; }
   if (rexW) sz = 8; else if (pfx66) sz = 2; else sz = 4;
@@ -955,8 +983,12 @@ U0 Step()
     case 0x8A: DecodeModRM(); WrReg(rg, 1, RdRM(1)); break;       // MOV r8, r/m8
     case 0x89: DecodeModRM(); WrRM(sz, RdReg(rg, sz)); break;     // MOV r/m, r
     case 0x8B: DecodeModRM(); WrReg(rg, sz, RdRM(sz)); break;     // MOV r, r/m
-    case 0x86: DecodeModRM(); imm = RdRM(1);  WrRM(1, RdReg(rg, 1));   WrReg(rg, 1, imm);  break;  // XCHG r/m8, r8 (atomic swap; locks)
-    case 0x87: DecodeModRM(); imm = RdRM(sz); WrRM(sz, RdReg(rg, sz)); WrReg(rg, sz, imm); break;  // XCHG r/m, r
+    case 0x86: DecodeModRM();                                                                       // XCHG r/m8, r8 (mem form is implicitly LOCKed)
+               if (isMem && ea < mem_size) imm = AtomXchg(ea, RdReg(rg, 1), 1);
+               else { imm = RdRM(1); WrRM(1, RdReg(rg, 1)); } WrReg(rg, 1, imm); break;
+    case 0x87: DecodeModRM();                                                                       // XCHG r/m, r (mem form is implicitly LOCKed)
+               if (isMem && ea < mem_size && !(ea & (sz - 1))) imm = AtomXchg(ea, RdReg(rg, sz), sz);
+               else { imm = RdRM(sz); WrRM(sz, RdReg(rg, sz)); } WrReg(rg, sz, imm); break;
     case 0x8E: DecodeModRM(); g_seg[rg & 7] = RdRM(2); break;     // MOV Sreg, r/m16 — selector stored, ignored (flat)
     case 0x8C: DecodeModRM(); WrRM(2, g_seg[rg & 7]); break;      // MOV r/m16, Sreg
     case 0xC6: DecodeModRM(1); WrRM(1, Fetch8()); break;          // MOV r/m8, imm8
