@@ -89,6 +89,28 @@ console.log("launched Talons; running multi-core...");
 const FR = Number(process.env.FR || 400);
 for (let c = 0; c < FR; c++) { await step(); if (c % 40 === 0) { const t = screen(); console.log(`  f${c} ic=${((rd(ICOUNT)-ic0)/1e9).toFixed(1)}B AP1=${(perCore[1]/1e6).toFixed(0)}M init=${/nitializ/.test(t)?"Y":"n"} | ${(t.split("\n")[0]||"").slice(0,36)}`); } if (bad) break; }
 if (lastFrame) dumpPng("/tmp/smp_talons.png", lastFrame.u8.subarray(lastFrame.a, lastFrame.a + lastFrame.w * lastFrame.h), lastFrame.w, lastFrame.h);
+// --- FLY PHASE: init is done + game rendering. Press a start key, then steer, and capture a sequence.
+// terrain (parallel MPDoPanels render) should appear once the plane is airborne with sane telemetry.
+const FLY = Number(process.env.FLY || 0);
+if (FLY > 0) {
+  // arrow keys are extended set-1 scancodes (0xE0 prefix). hold = press without release each frame.
+  const KEY = { up:[0xE0,0x48], dn:[0xE0,0x50], lf:[0xE0,0x4B], rt:[0xE0,0x4D], enter:[0x1C], space:[0x39] };
+  const tapK = (n) => { const sc = KEY[n]; keyq.push(...sc); keyq.push(...sc.map(b=>b|0x80)); };
+  const STARTK = process.env.STARTK || "enter";        // key to start a round (HUD hints ENTER)
+  const HOLD = process.env.HOLD || "";                  // a flight key to hold each frame (e.g. "up")
+  console.log(`--- FLY: start='${STARTK}' hold='${HOLD || "(none)"}' for ${FLY} frames ---`);
+  tapK(STARTK); await run(4);
+  for (let c = 0; c < FLY; c++) {
+    if (HOLD) { const sc = KEY[HOLD]; keyq.push(...sc); }  // press (no release) = held
+    await step();
+    if (c % 50 === 0) { const t = screen(); const ln = t.split("\n"); const hud = (ln[1]||ln[0]||"").slice(0,72);
+      console.log(`  fly${c} | ${hud}`);
+      dumpPng(`/tmp/smp_fly_${String(c).padStart(4,"0")}.png`, lastFrame.u8.subarray(lastFrame.a, lastFrame.a + lastFrame.w * lastFrame.h), lastFrame.w, lastFrame.h); }
+    if (bad) break;
+  }
+  if (lastFrame) dumpPng("/tmp/smp_fly_last.png", lastFrame.u8.subarray(lastFrame.a, lastFrame.a + lastFrame.w * lastFrame.h), lastFrame.w, lastFrame.h);
+  console.log("=== fly screen ===\n" + screen() + "\n=== /fly screen ===");
+}
 // per-core XMM usage: if any AP region (k>=1) is nonzero, the panel workers DO touch XMM (so per-core XMM matters)
 { const XB = G("g_xmm_lo"); for (let k = 0; k < NCORE; k++) { let nz = 0; for (let i = 0; i < 16; i++) if (rd(XB + k * 128 + i * 8)) nz++; console.log(`  core ${k} XMM nonzero regs: ${nz}/16`); } }
 // full HUD text (so we can read the Height telemetry line without the PNG)
