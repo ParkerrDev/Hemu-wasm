@@ -130,7 +130,7 @@ U0 MmioWr(U64 a, I64 sz, U64 v)
     I64 dest = g_icr_high[MyCore()] >> 24;                   // dest apic_id (== core slot)
     I64 dm = (v >> 8) & 7;                                   // delivery mode (0=fixed)
     if (dm == 0 && dest >= 0 && dest < g_ncore && dest != MyCore())
-      g_ipi_pending[dest] = (v & 0xFF) | 0x100;             // mark this AP's pending wake-vector (|0x100 = nonzero)
+      __a_xchg64(&g_ipi_pending[dest], (v & 0xFF) | 0x100); // mark this AP's pending wake-vector (|0x100). ATOMIC (seq-cst): publishes the sender's prior task-state writes to the woken AP (x86-TSO ordering across real cores)
     return; }
   // other LAPIC EOI / config writes: acknowledged, no state to keep.
 }
@@ -1115,8 +1115,8 @@ U0 RunCore(I64 budget)
   I64 lim = icount + budget, ip, b;
   while (icount < lim) {
     if (halted >= 2) break;                                       // fault
-    ip = g_ipi_pending[MyCore()];
-    if (ip && (rfl & F_IF)) { g_ipi_pending[MyCore()] = 0; halted = 0; DoInt(ip & 0xFF, 0, 0); }
+    ip = __a_or64(&g_ipi_pending[MyCore()], 0);                   // ATOMIC (seq-cst) load: acquires the sender's task-state writes before we run its handler (x86-TSO)
+    if (ip && (rfl & F_IF)) { __a_and64(&g_ipi_pending[MyCore()], 0); halted = 0; DoInt(ip & 0xFF, 0, 0); }
     if (halted == 1) break;                                       // idle (HLT), no deliverable IPI -> yield
     b = 0;
     if (!g_hooktbl[rip & 0xFFFF]) b = __ap_run(rip, lim - icount);   // per-core JIT block CHAIN (0 = cold)
