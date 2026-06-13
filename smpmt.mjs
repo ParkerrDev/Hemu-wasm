@@ -24,7 +24,7 @@ if (isMainThread) {
   const src = readFileSync("./src/snapshot.HC", "latin1");
   const r = compileHolyC(src, { filename: "snapshot.HC", lenient: false, sharedMemory: true, defines: { SMP_SNAP: "1" }, exports: ["RunCore"],
     includeResolver: (p) => { try { return readFileSync("./src/" + p, "latin1"); } catch { return null; } } });
-  const globals = {}; for (const n of ["icount","g_ncore","g_ipi_pending","g_cpu_st","tsc","xmm_lo","xmm_hi","g_xmm_lo","g_xmm_hi"]) { const g = r.globals.get(n); if (g) globals[n] = Number(g.addr); }
+  const globals = {}; for (const n of ["icount","g_ncore","g_ipi_pending","g_cpu_st","tsc","xmm_lo","xmm_hi","g_xmm_lo","g_xmm_hi","mem"]) { const g = r.globals.get(n); if (g) globals[n] = Number(g.addr); }
   const mem = new WebAssembly.Memory({ initial: 512, maximum: 8192, shared: true });
   const ctrl = new Int32Array(new SharedArrayBuffer(64));
   const t0 = performance.now();
@@ -115,6 +115,7 @@ if (isMainThread) {
   // ---- AP: wait for BSP barrier, set per-core JIT offsets, run RunCore continuously (IPI-woken) ----
   async function ap() {
     Atomics.wait(ctrl, CTRL.READY, 0);                    // block until BSP has loaded snapshot + seeded regs
+    gBase = rd(globals.mem);                               // guest RAM base = the shared `mem` global (BSP set it in __rt_init). APs never run snapLoad, so this was 0 -> JIT addressed mem from 0 -> garbage -> BADOP
     const CST = globals.g_cpu_st, ST = 440, oc = (o) => CST + core * ST + o;
     const XLO = globals.g_xmm_lo, XHI = globals.g_xmm_hi, TSC = globals.tsc;
     const RM = inst.exports.RdMem, WM = inst.exports.WrMem, RH = inst.exports.RasterHLE, MM = inst.exports.memory;
@@ -124,15 +125,19 @@ if (isMainThread) {
     log(`AP${core}: started (parallel)`);
     const APB = 2000000n;
     const sleep = () => new Promise(r => setTimeout(r, 0));
-    let spins = 0;
+    const RIPOFF = oc(128);                                   // this AP's f_rip in g_cpu_st
+    let spins = 0, total = 0, ipis = 0, lastIpi = -1, busy = 0; const hist = new Map(); let nextLog = 1500;
     while (!Atomics.load(ctrl, CTRL.STOP)) {
+      const ip = rd(globals.g_ipi_pending + core * 8); if (ip && ip !== lastIpi) { ipis++; lastIpi = ip; } else if (!ip) lastIpi = -1;
       const before = rd(globals.icount);
       inst.exports.RunCore(APB);
-      const did = rd(globals.icount) - before;
+      const did = rd(globals.icount) - before; total += did;
+      if (did > 1000) { busy++; const rp = rd(RIPOFF); const reg = rp < 0x1000000 ? "k" + (rp >>> 12 << 12).toString(16) : "g" + (rp >>> 20 << 20).toString(16); hist.set(reg, (hist.get(reg) || 0) + 1); }
+      if (total > nextLog * 1e6) { nextLog += 1500; const top = [...hist.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([r, c]) => `${r}x${c}`).join(" "); log(`AP${core}: ${(total / 1e6).toFixed(0)}M instr, ${ipis} IPIs, busy=${busy}, where: ${top}`); }
       if (did < 1000) { spins++; if (spins > 4) { await sleep(); spins = 0; } }   // idle -> yield (don't busy-spin a core)
       else { spins = 0; if (Math.random() < 0.002) await sleep(); }               // busy -> rare yield to drain
     }
-    log(`AP${core}: stopped`);
+    log(`AP${core}: stopped (${(total / 1e6).toFixed(0)}M instr, ${ipis} IPIs)`);
   }
 
   // ---- framebuffer -> PNG + 8x8 FONT OCR (same as smptalons) ----
