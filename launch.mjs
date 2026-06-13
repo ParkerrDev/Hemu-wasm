@@ -28,13 +28,14 @@ const host = createHost({ onText: (s) => { if (s && s.indexOf("BADOP") >= 0) { c
 host.env.__host_msx = () => 320n; host.env.__host_msy = () => 240n; host.env.__host_msb = () => 0n; host.env.__host_wheel = () => 0n;
 host.env.__host_key = () => keyq.length ? BigInt(keyq.shift()) : -1n; host.env.__host_prof = () => {};
 host.env.__host_budget = () => 12000000n; host.env.__host_dt = () => 16n; host.env.__host_time = () => 0n;
-let RIPOFF = 0;
+let RIPOFF = 0, covNative = 0, covCalls = 0; const brkRips = new Map(); let cov = false;
 host.env.__jit_state = (rg, fl, rp) => { RIPOFF = Number(rp); jit.jitState(rg, fl, rp, gBase, inst.exports.memory, inst.exports.RdMem, inst.exports.WrMem, inst.exports.RasterHLE); return 1n; };
 host.env.__jit_compile = (rip) => BigInt(jit.jitCompile(Number(rip)));
 host.env.__jit_run = (rip) => BigInt(jit.jitRun(Number(rip)));
 host.env.__jit_x87 = (a, b, c) => jit.jitX87(a, b, c);
-host.env.__jit_dispatch = (b) => BigInt(jit.jitDispatch(Number(b)));
+host.env.__jit_dispatch = (b) => { const n = jit.jitDispatch(Number(b)); if (cov) { covNative += n; covCalls++; const rp = Number(dvX().getBigUint64(RIPOFF, true)); brkRips.set(rp, (brkRips.get(rp) || 0) + 1); } return BigInt(n); };
 host.env.__jit_chain = (a, b) => jit.jitChain(a, b); host.env.__jit_seg = (...a) => jit.jitSeg(...a.map(Number));
+const dvX = () => new DataView(inst.exports.memory.buffer);
 jit.jitReset();
 inst = await WebAssembly.instantiate(mod, { env: host.env }); host.attach(inst); inst.exports.__rt_init();
 const run = (n) => { for (let i = 0; i < n; i++) inst.exports.__main(); };
@@ -57,11 +58,21 @@ const ic = () => Number(dv().getBigUint64(G("icount"), true));
 const ripHist = new Map(); let sampling = false;
 const runS = (n) => { for (let i = 0; i < n; i++) { inst.exports.__main(); if (sampling && RIPOFF) { const rp = Number(dv().getBigUint64(RIPOFF, true)); ripHist.set(rp, (ripHist.get(rp) || 0) + 1); } } };
 typeStr(CMD + "\n");
-const ic0 = ic(); sampling = true;
-runS(Number(process.env.BOOT || 400));
+const ic0 = ic(); sampling = true; cov = !!process.env.COV;
+if (process.env.PROG) {                                  // watch for progress: run chunks, report icount + whether the screen changed
+  const chunks = Number(process.env.PROG), CH = Number(process.env.CHUNK || 300);
+  for (let c = 0; c < chunks; c++) { runS(CH); const t = screenText(); const first = t.split("\n")[0] || "";
+    let nz = 0; const f = lastFb; if (f) for (let i = 0; i < f.w * f.h; i++) if (f.u8[f.a + i] && f.u8[f.a + i] !== 1) nz++;
+    console.error(`chunk ${c+1}/${chunks}: ic=${(ic()/1e9).toFixed(1)}B  init=${/nitializ/.test(t)?"Y":"n"}  nonbg=${(100*nz/(f.w*f.h)).toFixed(1)}%  | ${first.slice(0,40)}`); }
+} else runS(Number(process.env.BOOT || 400));
 sampling = false;
 const icD = ic() - ic0;
 console.error(`post-cmd icount: ${(icD/1e6).toFixed(0)}M (${icD ? "busy" : "idle"});  top RIPs: ` + [...ripHist.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6).map(([r,c])=>`0x${r.toString(16)}(x${c})`).join(" "));
+if (process.env.COV) {
+  console.error(`JIT coverage: ${(100*covNative/Math.max(1,icD)).toFixed(1)}% native (${(covNative/1e9).toFixed(1)}B of ${(icD/1e9).toFixed(1)}B), ${covCalls} dispatches, avg ${(covNative/Math.max(1,covCalls)).toFixed(0)} instr/block`);
+  console.error("top chain-break RIPs (where the JIT keeps handing back to the interpreter):");
+  for (const [rp, c] of [...brkRips.entries()].sort((a,b)=>b[1]-a[1]).slice(0,12)) console.error(`   0x${rp.toString(16)}  x${c}`);
+}
 if (process.env.KEYS) for (const [mk,bk] of [[0x39,0xB9],[0x1C,0x9C],[0x39,0xB9],[0x48,0xC8],[0x50,0xD0],[0x4B,0xCB],[0x4D,0xCD],[0x39,0xB9]]) { keyq.push(mk); run(10); keyq.push(bk); run(10); run(40); }
 const NAME = process.env.NAME || "cmd";
 if (lastFb) { dumpPng("/tmp/launch_" + NAME + ".png", lastFb.u8.subarray(lastFb.a, lastFb.a + lastFb.w * lastFb.h), lastFb.w, lastFb.h); console.error("wrote /tmp/launch_" + NAME + ".png"); }
