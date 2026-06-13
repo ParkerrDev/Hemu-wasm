@@ -61,9 +61,14 @@ typeStr(CMD + "\n");
 const ic0 = ic(); sampling = true; cov = !!process.env.COV;
 if (process.env.PROG) {                                  // watch for progress: run chunks, report icount + whether the screen changed
   const chunks = Number(process.env.PROG), CH = Number(process.env.CHUNK || 300);
+  let sawBlank = false;
   for (let c = 0; c < chunks; c++) { runS(CH); const t = screenText(); const first = t.split("\n")[0] || "";
     let nz = 0; const f = lastFb; if (f) for (let i = 0; i < f.w * f.h; i++) if (f.u8[f.a + i] && f.u8[f.a + i] !== 1) nz++;
-    console.error(`chunk ${c+1}/${chunks}: ic=${(ic()/1e9).toFixed(1)}B  init=${/nitializ/.test(t)?"Y":"n"}  nonbg=${(100*nz/(f.w*f.h)).toFixed(1)}%  | ${first.slice(0,40)}`); }
+    const pct = 100 * nz / (f.w * f.h);
+    console.error(`chunk ${c+1}/${chunks}: ic=${(ic()/1e9).toFixed(1)}B  init=${/nitializ/.test(t)?"Y":"n"}  nonbg=${pct.toFixed(1)}%  | ${first.slice(0,40)}`);
+    if (pct < 5) sawBlank = true;
+    else if (sawBlank && pct > 20) { console.error(`>>> INIT COMPLETE at ${(ic()/1e9).toFixed(1)}B instr — terrain is drawing (nonbg ${pct.toFixed(1)}%)`); break; }   // blank -> drawn = game started
+  }
 } else runS(Number(process.env.BOOT || 400));
 sampling = false;
 const icD = ic() - ic0;

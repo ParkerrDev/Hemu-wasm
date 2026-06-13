@@ -1080,13 +1080,16 @@ U0 CallGuest(U64 fn)
 // stops early when the core goes idle (HLT) with nothing pending, yielding to the orchestrator.
 U0 RunCore(I64 budget)
 {
-  I64 lim = icount + budget, ip;
+  I64 lim = icount + budget, ip, b;
   while (icount < lim) {
     if (halted >= 2) break;                                       // fault
     ip = g_ipi_pending[MyCore()];
     if (ip && (rfl & F_IF)) { g_ipi_pending[MyCore()] = 0; halted = 0; DoInt(ip & 0xFF, 0, 0); }
     if (halted == 1) break;                                       // idle (HLT), no deliverable IPI -> yield
-    Step(); icount++;
+    b = 0;
+    if (!g_hooktbl[rip & 0xFFFF]) b = __ap_run(rip, lim - icount);   // per-core JIT block CHAIN (0 = cold)
+    if (!b) { Step(); b = 1; }                                    // cold -> interpret one (compile triggered host-side)
+    icount += b;
   }
 }
 U0 Run(I64 maxi)                       // run until icount==maxi (or a fault halts us)

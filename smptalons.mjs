@@ -3,7 +3,10 @@
 // + I_WAKE IPIs), APs via RunCore (IPI-woken, pure interp). Types the include at the shell prompt.
 import { compileHolyC } from "../holyc-wasm/src/compiler.js";
 import { createHost } from "../holyc-wasm/src/runtime/host.js";
-import * as jit from "./jit.js";
+// one jit.js instance PER CORE (distinct URL = distinct module state -> per-core compiled blocks +
+// per-core baked reg offsets). APs run single blocks via jitRun (no shared g_jit_rip dependency).
+const jits = [await import("./jit.js"), await import("./jit.js?c1"), await import("./jit.js?c2"), await import("./jit.js?c3")];
+const jit = jits[0];
 import { readFileSync, writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { FONT } from "../holyc-wasm/src/runtime/font.js";
@@ -33,13 +36,19 @@ const APB = BigInt(process.env.APB || 3000000);
 host.env.__host_budget = () => BigInt(curBudget); host.env.__host_dt = () => 16n;
 // JIT only runs for core 0 (jitState gets core 0's offsets); APs use RunCore (pure interp), so the
 // shared jit.js never sees a non-core-0 offset.
-host.env.__jit_state = (rg, fl, rp) => { if (inst.exports.__core.value !== 0n) return 0n; jit.jitState(rg, fl, rp, gBase, inst.exports.memory, inst.exports.RdMem, inst.exports.WrMem, inst.exports.RasterHLE); return 1n; };
-host.env.__jit_compile = (rip) => BigInt(jit.jitCompile(Number(rip)));
-host.env.__jit_run = (rip) => BigInt(jit.jitRun(Number(rip)));
-host.env.__jit_x87 = (a, b, c) => jit.jitX87(a, b, c);
-host.env.__jit_dispatch = (b) => BigInt(jit.jitDispatch(Number(b)));
-host.env.__jit_chain = (a, b) => jit.jitChain(a, b); host.env.__jit_seg = (...a) => jit.jitSeg(...a.map(Number));
-host.env.mem = sharedMem; jit.jitReset();
+const cur = () => Number(inst.exports.__core.value);    // route JIT host imports to the running core's jit
+host.env.__jit_state = (rg, fl, rp) => { jits[cur()].jitState(rg, fl, rp, gBase, inst.exports.memory, inst.exports.RdMem, inst.exports.WrMem, inst.exports.RasterHLE); return 1n; };
+host.env.__jit_compile = (rip) => BigInt(jits[cur()].jitCompile(Number(rip)));
+host.env.__jit_run = (rip) => BigInt(jits[cur()].jitRun(Number(rip)));
+host.env.__jit_x87 = (a, b, c) => jits[cur()].jitX87(a, b, c);
+host.env.__jit_dispatch = (b) => BigInt(jits[cur()].jitDispatch(Number(b)));
+host.env.__jit_chain = (a, b) => jits[cur()].jitChain(a, b); host.env.__jit_seg = (...a) => jits[cur()].jitSeg(...a.map(Number));
+const apHot = [new Map(), new Map(), new Map(), new Map()];   // per-core hotness for __ap_run
+globalThis.apJitN = 0; globalThis.apJitInstr = 0; globalThis.apMiss = 0;
+host.env.__ap_run = (rip, bud) => { rip = Number(rip); const k = cur(); const J = jits[k];
+  if (!J.jitInspect(rip).cached) { const h = (apHot[k].get(rip) || 0) + 1; apHot[k].set(rip, h); if (h <= 2) { globalThis.apMiss++; return 0n; } J.jitCompile(rip); }
+  const n = J.jitDispatch(Number(bud)); if (n > 0) { globalThis.apJitN++; globalThis.apJitInstr += n; } else globalThis.apMiss++; return BigInt(n); };
+host.env.mem = sharedMem; jits.forEach((j) => j.jitReset());
 inst = await WebAssembly.instantiate(mod, { env: host.env });
 inst.exports.__sp.value = 0x1000000n; inst.exports.__core.value = 0n;
 host.attach(inst); inst.exports.__rt_init();
@@ -47,6 +56,10 @@ const dv = () => new DataView(inst.exports.memory.buffer);
 const rd = (a) => Number(dv().getBigUint64(a, true));
 inst.exports.__main();
 const ICOUNT = G("icount"), NCORE = rd(G("g_ncore")), IPI = G("g_ipi_pending");
+// set up each AP's jit with ITS core's CCpuState offsets (the APs never call __jit_state themselves)
+{ const CST2 = G("g_cpu_st"), ST = 440, oc = (k, o) => CST2 + k * ST + o;
+  const TSC = G("tsc"), XLO = G("xmm_lo"), XHI = G("xmm_hi"), RM = inst.exports.RdMem, WM = inst.exports.WrMem, RH = inst.exports.RasterHLE, MM = inst.exports.memory;
+  for (let k = 1; k < NCORE; k++) { jits[k].jitState(oc(k, 0), oc(k, 136), oc(k, 128), gBase, MM, RM, WM, RH); jits[k].jitX87(oc(k, 232), oc(k, 296), oc(k, 312)); jits[k].jitSeg(oc(k, 320), oc(k, 328), TSC, oc(k, 304), XLO, XHI); } }
 const SP_BASE = 0x1000000, setCore = (k) => { inst.exports.__core.value = BigInt(k); inst.exports.__sp.value = BigInt(SP_BASE - k * 0x100000); };
 const sleep = (ms) => new Promise((rr) => setTimeout(rr, ms));
 const perCore = new Array(NCORE).fill(0);
@@ -76,6 +89,7 @@ console.log("launched Talons; running multi-core...");
 const FR = Number(process.env.FR || 400);
 for (let c = 0; c < FR; c++) { await step(); if (c % 40 === 0) { const t = screen(); console.log(`  f${c} ic=${((rd(ICOUNT)-ic0)/1e9).toFixed(1)}B AP1=${(perCore[1]/1e6).toFixed(0)}M init=${/nitializ/.test(t)?"Y":"n"} | ${(t.split("\n")[0]||"").slice(0,36)}`); } if (bad) break; }
 if (lastFrame) dumpPng("/tmp/smp_talons.png", lastFrame.u8.subarray(lastFrame.a, lastFrame.a + lastFrame.w * lastFrame.h), lastFrame.w, lastFrame.h);
+console.log(`AP JIT: ${globalThis.apJitN} block-runs, ${(globalThis.apJitInstr/1e9).toFixed(2)}B native instr, ${globalThis.apMiss} interp/miss`);
 console.log("=== Talons on multi-core ===");
 console.log("IPI slots ever pending: 0b" + ipiMask.toString(2).padStart(NCORE, "0"));
 for (let k = 0; k < NCORE; k++) console.log(`  core ${k}: ${perCore[k].toLocaleString()} instr ${k?"(AP)":"(BSP)"}` + (k && apHist[k].size ? "  where: " + [...apHist[k].entries()].sort((a,b)=>b[1]-a[1]).slice(0,3).map(([r,c])=>`${r}×${c}`).join(" ") : ""));
