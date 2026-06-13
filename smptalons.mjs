@@ -28,7 +28,8 @@ const host = createHost({ onText: (s) => { if (s && s.indexOf("BADOP") >= 0) { b
   present: (a, w, h, u8) => { lastFrame = { a, w, h, u8 }; } });
 host.env.__host_msx = () => BigInt(mx); host.env.__host_msy = () => BigInt(my); host.env.__host_msb = () => BigInt(mb); host.env.__host_wheel = () => 0n;
 host.env.__host_key = () => keyq.length ? BigInt(keyq.shift()) : -1n; host.env.__host_prof = () => {};
-let curBudget = 4000000;
+let curBudget = Number(process.env.B0 || 4000000);
+const APB = BigInt(process.env.APB || 3000000);
 host.env.__host_budget = () => BigInt(curBudget); host.env.__host_dt = () => 16n;
 // JIT only runs for core 0 (jitState gets core 0's offsets); APs use RunCore (pure interp), so the
 // shared jit.js never sees a non-core-0 offset.
@@ -50,9 +51,11 @@ const SP_BASE = 0x1000000, setCore = (k) => { inst.exports.__core.value = BigInt
 const sleep = (ms) => new Promise((rr) => setTimeout(rr, ms));
 const perCore = new Array(NCORE).fill(0);
 // one orchestrated macro-step: core 0 frame (JIT) + each AP (RunCore)
-let ipiMask = 0;
+let ipiMask = 0; const CST = G("g_cpu_st"); const apHist = [new Map(),new Map(),new Map(),new Map()];
+const aprip = (k) => rd(CST + k * 440 + 128);
 async function step() { setCore(0); let a = rd(ICOUNT); inst.exports.__main(); perCore[0] += rd(ICOUNT) - a;
-  for (let k = 1; k < NCORE; k++) { if (rd(IPI + k * 8)) ipiMask |= 1 << k; setCore(k); a = rd(ICOUNT); inst.exports.RunCore(3000000n); perCore[k] += rd(ICOUNT) - a; } }
+  for (let k = 1; k < NCORE; k++) { if (rd(IPI + k * 8)) ipiMask |= 1 << k; setCore(k); a = rd(ICOUNT); inst.exports.RunCore(APB); const d = rd(ICOUNT) - a; perCore[k] += d;
+    if (d > 100000) { const rp = aprip(k); const region = rp < 0x1000000 ? "kernel0x"+(rp>>>12<<12).toString(16) : "game0x"+(rp>>>20<<20).toString(16); apHist[k].set(region, (apHist[k].get(region)||0)+1); } } }
 async function run(n) { for (let i = 0; i < n; i++) { await step(); if (i % 16 === 0) await sleep(0); if (bad) break; } }
 // --- typing (set-1 scancodes) ---
 const SC={a:0x1E,b:0x30,c:0x2E,d:0x20,e:0x12,f:0x21,g:0x22,h:0x23,i:0x17,j:0x24,k:0x25,l:0x26,m:0x32,n:0x31,o:0x18,p:0x19,q:0x10,r:0x13,s:0x1F,t:0x14,u:0x16,v:0x2F,w:0x11,x:0x2D,y:0x15,z:0x2C,"0":0x0B,"1":0x02,"2":0x03,"3":0x04,"4":0x05,"5":0x06,"6":0x07,"7":0x08,"8":0x09,"9":0x0A," ":0x39,"=":0x0D,";":0x27,"\n":0x1C,",":0x33,".":0x34,"/":0x35,"-":0x0C,"'":0x28,"[":0x1A,"]":0x1B,"\\":0x2B};
@@ -75,6 +78,6 @@ for (let c = 0; c < FR; c++) { await step(); if (c % 40 === 0) { const t = scree
 if (lastFrame) dumpPng("/tmp/smp_talons.png", lastFrame.u8.subarray(lastFrame.a, lastFrame.a + lastFrame.w * lastFrame.h), lastFrame.w, lastFrame.h);
 console.log("=== Talons on multi-core ===");
 console.log("IPI slots ever pending: 0b" + ipiMask.toString(2).padStart(NCORE, "0"));
-for (let k = 0; k < NCORE; k++) console.log(`  core ${k}: ${perCore[k].toLocaleString()} instr ${k?"(AP)":"(BSP)"}`);
+for (let k = 0; k < NCORE; k++) console.log(`  core ${k}: ${perCore[k].toLocaleString()} instr ${k?"(AP)":"(BSP)"}` + (k && apHist[k].size ? "  where: " + [...apHist[k].entries()].sort((a,b)=>b[1]-a[1]).slice(0,3).map(([r,c])=>`${r}×${c}`).join(" ") : ""));
 console.log("wrote /tmp/smp_talons.png " + (bad ? "BADOP!" : ""));
 process.exit(0);
