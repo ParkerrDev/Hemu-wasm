@@ -217,7 +217,7 @@ export function jitCompile(rip) {
   let i = GBASE + rip, n = 0, term = false, loopT = null;   // loopT set if the block is a self-loop (jcc back to entry); REP string ops emit their own native loop + end the block via the normal terminator path
   let ifbrk = false;   // block ends on an instruction that can OPEN an IF=1 window (STI/POPF/IRET): its return count carries bit30 so the dispatcher's break-on-IF mode can hand back for an IRQ delivery
   for (; n < 400;) {
-    let j = i, rexW = 0, rexR = 0, rexX = 0, rexB = 0, rex = 0, pfx66 = 0, two = 0, rep = 0; SEG = 0;
+    let j = i, rexW = 0, rexR = 0, rexX = 0, rexB = 0, rex = 0, pfx66 = 0, two = 0, rep = 0, locked = 0; SEG = 0;
     for (;;) {                                            // prefixes
       const b = U8[j];
       if (b === 0x66) { pfx66 = 1; j++; }
@@ -225,10 +225,11 @@ export function jitCompile(rip) {
       else if (b === 0x65) { SEG = 2; j++; }              // GS:
       else if (b === 0xF3 && !globalThis.__NOREP) { rep = 1; j++; }   // REP/REPE (honored only for string ops below; harmless before others, which the CPU also ignores)
       else if (b === 0xF2 && !globalThis.__NOREP) { rep = 2; j++; }   // REPNE
-      else if (b === 0xF0 && !globalThis.__NOLOCK) { j++; }           // LOCK: single block, no real atomicity needed -> ignore
+      else if (b === 0xF0 && !globalThis.__NOLOCK) { locked = 1; j++; }   // LOCK: end the block here so the INTERPRETER runs this op atomically (SMP: JIT'd RMW isn't atomic)
       else if (b === 0x2E || b === 0x36 || b === 0x3E || b === 0x26) { j++; }   // CS/SS/DS/ES = flat in 64-bit (skip)
       else if (b >= 0x40 && b <= 0x4F) { rex = 1; rexW = (b >> 3) & 1; rexR = (b >> 2) & 1; rexX = (b >> 1) & 1; rexB = b & 1; j++; break; }
       else break; }
+    if (locked) break;                                   // LOCK-prefixed instr -> end block at `i`; interpreter executes it atomically
     let op = U8[j]; j++;
     if (op === 0x0F) { two = 1; op = U8[j]; j++; }
     const szV = rexW ? 8 : (pfx66 ? 2 : 4);              // size for "v" operands
@@ -570,7 +571,7 @@ export function jitCompile(rip) {
     }
     if (!handled) { if (globalThis.__JITSTATS) globalThis.__JITSTATS[(two ? "0F " : "") + op.toString(16)] = (globalThis.__JITSTATS[(two ? "0F " : "") + op.toString(16)] || 0) + 1; break; }   // unknown op: end block (interpreter resumes here)
     i = j; n++; }
-  if (n === 0) return 0;
+  if (n === 0) { blocks.set(rip, { fn: null, ninstr: 0 }); return 0; }   // empty block (e.g. LOCK-prefixed instr first) -> cache as failed so it's interpreted, not re-decoded every visit
   // Calling convention (chaining-ready): block STORES the exit rip to the shared RIP and RETURNS the
   // instruction count. For a self-loop, wrap the body in a native WASM loop so the whole loop runs in
   // one call (this is the dispatch win: a `dec rcx; jnz top` blit stays native instead of host round-tripping).
