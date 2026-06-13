@@ -224,6 +224,16 @@ U0 Main()                              // host calls __main once per display fra
     InitMem(402653184);                // 384 MiB guest RAM
     __snap_load(mem);                  // host copies the TempleOS RAM snapshot into guest memory
     SetSnapRegs();
+#ifdef SMP_SNAP
+    // Multi-core snapshot: the runtime-compiled kernel code is shifted by a CONSTANT delta -0x3e8200
+    // vs the single-core capture (tools/find-delta.mjs; g_hle_blit + g_skip_bg both agree); dc2 (data)
+    // by -0x3e8c88. ms_hard@0xC2B0 is in the low fixed-kernel area (unshifted). winmgr-refresh fixup
+    // omitted (this capture was taken at a RUNNING desktop, not a parked one).
+    g_dc2 = 0x115c51d8;                 // gr.dc2 in this snapshot (body 0x11536e28 = the clean composited desktop, verified by render)
+    mem[0xC2B0] = 1;                    // ms_hard.installed = TRUE
+    g_hle_blit = 0x115e0228; g_capture_rip = 0x115d008f;
+    g_skip_c4 = 0x115fa329; g_skip_vga = 0x1126b4e0; g_skip_xlat = 0x115fa228; g_skip_bg = 0x1126d628;
+#else
     g_dc2 = 0x119AD3D8;                 // gr.dc2 (= R14 in the live regs)
     // HLE fixups for qemu-wasm's live snapshot:
     //  - winmgr.ideal_refresh_tS (@0x1140cc10) no longer matches the resumed tS; zero it so the
@@ -243,6 +253,7 @@ U0 Main()                              // host calls __main once per display fra
                                        // dead work (dc2 presented directly with the JS palette). Big desktop win.
     g_skip_bg = 0x11655828;            // the desktop text/content redraw — skipped ONLY behind a fullscreen game
                                        // (g_game_running), where the desktop windows are hidden, to free the vCPU.
+#endif
     g_hooktbl[g_hle_blit & 0xFFFF] = 1;  // gate the per-instruction hook compares (Step reads g_hooktbl[rip&0xFFFF])
     g_hooktbl[g_capture_rip & 0xFFFF] = 1; g_hooktbl[g_skip_c4 & 0xFFFF] = 1; g_hooktbl[g_skip_vga & 0xFFFF] = 1; g_hooktbl[g_skip_xlat & 0xFFFF] = 1; g_hooktbl[g_skip_bg & 0xFFFF] = 1;
     g_jiffies0 = *(U64*)(mem + 0xBD98); // base jiffies; the RTC clock = base + (jiffies-base)/1000 sec
