@@ -58,7 +58,7 @@ I64 tsc_rate;                        // TSC ticks added per executed instruction
                                      // TSC must continue from the snapshot value and advance, or all
                                      // time freezes. The snapshot restores tsc + sets tsc_rate.
 U64 msr_efer, msr_star, msr_lstar, msr_sfmask, msr_kgsbase, msr_apic;   // msr_fsbase/msr_gsbase moved into CCpuState (per-core)
-U64 xmm_lo[16], xmm_hi[16];          // SSE XMM registers (low/high 64 bits each)
+U64 g_xmm_lo[NCORES][16], g_xmm_hi[NCORES][16];   // SSE XMM registers — PER-CORE (xmm_lo/xmm_hi #defines in snapshot.HC): an AP suspended mid-XMM must not be clobbered by another core
 // fsc/fpr/fsp/x87_cw/x87_sw moved into CCpuState (per-core)
 // devices: dual 8259 PICs + 8254 PIT (channel 0 -> IRQ0 = the scheduler tick)
 I64 pic1_base, pic1_mask, pic1_irr, pic1_isr, pic1_initstep; I64 pic2_base, pic2_mask, pic2_irr, pic2_isr, pic2_initstep; I64 pit_reload, pit_div, pit_counter, pit_wlo;
