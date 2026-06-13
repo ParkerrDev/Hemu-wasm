@@ -1,8 +1,8 @@
 # hemu-wasm — the Holy Emulator
 
 > Part of the TempleOS-web family:
-> [TempleOS-web](https://github.com/ParkerrDev/TempleOS-web) (the site, assembles this repo at build time) ·
-> [holyc-wasm](https://github.com/ParkerrDev/holyc-wasm) (clone as a SIBLING `../holyc-wasm` — build.mjs, the JIT and every harness import it from there) ·
+> [TempleOS-web](https://github.com/ParkerrDev/TempleOS-Web) (the site, assembles this repo at build time) ·
+> [holyc-wasm](https://github.com/ParkerrDev/HolyC-wasm) (clone as a SIBLING `../holyc-wasm` — build.mjs, the JIT and every harness import it from there) ·
 > [TerryADavis-archive-transcriber](https://github.com/ParkerrDev/TerryADavis-archive-transcriber).
 >
 > Harnesses expect `/tmp/live.bin` (gunzipped `live.bin.gz`) and `/tmp/templeos.raw`
