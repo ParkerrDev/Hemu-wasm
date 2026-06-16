@@ -468,6 +468,19 @@ U64 F64ToBits(F64 d) { *(F64 *)fsc = d; return *(U64 *)fsc; }
 F64 IntToF64(I64 v)  { F64 d; d = v; return d; }                // signed int -> double
 I64 F64ToInt(F64 d)  { I64 v; v = d; return v; }                // double -> int (trunc toward 0)
 I64 RoundI(F64 d)    { if (d >= 0) return F64ToInt(d + 0.5); return F64ToInt(d - 0.5); }  // round-nearest
+// Round per the x87 control-word RC bits (cw[11:10]): 0=nearest, 1=down(-inf), 2=up(+inf), 3=trunc(0).
+// Real x87 FRNDINT/FIST honor this; TempleOS's Floor()/Ceil() set RC then FRNDINT (Kernel/KMathA.HC
+// _FLOOR), so ignoring RC made Floor() round-to-nearest (Floor(5.98)==6) and broke grid/collision math.
+I64 RoundCW(F64 d)
+{
+  I64 rc = (x87_cw >> 10) & 3, i;
+  if (rc == 0) return RoundI(d);                  // nearest (keep exact prior behavior)
+  if (rc == 3) return F64ToInt(d);                // truncate toward 0
+  i = F64ToInt(d);                                // toward 0, then bias to the requested infinity:
+  if (rc == 1) { if (IntToF64(i) > d) i--; }      //  down -> Floor
+  else         { if (IntToF64(i) < d) i++; }      //  up   -> Ceil
+  return i;
+}
 
 //---------------------------------------------------------------- x87 FPU (the subset TempleOS's JIT emits)
 // HolyC is F64-based; the compiler uses x87 mainly for int<->double conversion
@@ -503,8 +516,8 @@ U0 OpX87(U64 op)
     } else if (op == 0xDB) {
       if (sub == 0) FPush(IntToF64(SignExtTo64(RdMem(ea, 4), 4)));    // FILD  m32int
       else if (sub == 1) { WrMem(ea, 4, F64ToInt(FStv(0))); FPopv(); } // FISTTP m32int (trunc + pop)
-      else if (sub == 2) WrMem(ea, 4, RoundI(FStv(0)));              // FIST  m32int
-      else if (sub == 3) { WrMem(ea, 4, RoundI(FStv(0))); FPopv(); } // FISTP m32int
+      else if (sub == 2) WrMem(ea, 4, RoundCW(FStv(0)));              // FIST  m32int
+      else if (sub == 3) { WrMem(ea, 4, RoundCW(FStv(0))); FPopv(); } // FISTP m32int
       else if (sub == 5) FPush(BitsToF64(RdMem(ea, 8)));            // FLD   m80 (approx: low 64b)
       else if (sub == 7) { WrMem(ea, 8, F64ToBits(FStv(0))); FPopv(); } // FSTP m80 (approx)
     } else if (op == 0xDD) {
@@ -515,17 +528,17 @@ U0 OpX87(U64 op)
     } else if (op == 0xDF) {
       if (sub == 0) FPush(IntToF64(SignExtTo64(RdMem(ea, 2), 2)));   // FILD  m16int
       else if (sub == 1) { WrMem(ea, 2, F64ToInt(FStv(0))); FPopv(); } // FISTTP m16int (trunc + pop)
-      else if (sub == 2) WrMem(ea, 2, RoundI(FStv(0)));            // FIST  m16int
-      else if (sub == 3) { WrMem(ea, 2, RoundI(FStv(0))); FPopv(); } // FISTP m16int
+      else if (sub == 2) WrMem(ea, 2, RoundCW(FStv(0)));            // FIST  m16int
+      else if (sub == 3) { WrMem(ea, 2, RoundCW(FStv(0))); FPopv(); } // FISTP m16int
       else if (sub == 5) FPush(IntToF64(RdMem(ea, 8)));            // FILD  m64int
       else if (sub == 4) {                                          // FBLD m80 — packed-BCD load (18 digits + sign)
         bcd_i = 0; for (bcd_d = 8; bcd_d >= 0; bcd_d--) { bcd_ng = RdMem(ea + bcd_d, 1); bcd_i = bcd_i * 100 + (bcd_ng >> 4) * 10 + (bcd_ng & 15); }
         if (RdMem(ea + 9, 1) & 0x80) bcd_i = -bcd_i; FPush(IntToF64(bcd_i)); }
       else if (sub == 6) {                                          // FBSTP m80 — packed-BCD store + pop (x87 float->decimal)
-        bcd_i = RoundI(FStv(0)); bcd_ng = 0; if (bcd_i < 0) { bcd_ng = 1; bcd_i = -bcd_i; }
+        bcd_i = RoundCW(FStv(0)); bcd_ng = 0; if (bcd_i < 0) { bcd_ng = 1; bcd_i = -bcd_i; }
         for (bcd_d = 0; bcd_d < 9; bcd_d++) { WrMem(ea + bcd_d, 1, (bcd_i % 10) | ((bcd_i / 10 % 10) << 4)); bcd_i /= 100; }
         WrMem(ea + 9, 1, bcd_ng ? 0x80 : 0); FPopv(); }
-      else if (sub == 7) { WrMem(ea, 8, RoundI(FStv(0))); FPopv(); } // FISTP m64int
+      else if (sub == 7) { WrMem(ea, 8, RoundCW(FStv(0))); FPopv(); } // FISTP m64int
     } else if (op == 0xD8 || op == 0xDC) {                           // real arith (m32 / m64)
       if (op == 0xD8) b = F32ToF64(RdMem(ea, 4)); else b = BitsToF64(RdMem(ea, 8)); a = FStv(0);
       if (sub == 2 || sub == 3) { FCmpSW(a, b); if (sub == 3) FPopv(); return; }   // FCOM/FCOMP
@@ -555,7 +568,7 @@ U0 OpX87(U64 op)
       else if (sti == 1) { r = FStv(1) * __log(FStv(0) + 1.0) * 1.44269504088896341; FPopv(); FStset(0, r); }  // FYL2XP1
       else if (sti == 2) FStset(0, SqrtF64(FStv(0)));                                          // FSQRT
       else if (sti == 3) { a = FStv(0); FStset(0, __sin(a)); FPush(__cos(a)); }                // FSINCOS
-      else if (sti == 4) FStset(0, IntToF64(RoundI(FStv(0))));                                 // FRNDINT
+      else if (sti == 4) FStset(0, IntToF64(RoundCW(FStv(0))));                                 // FRNDINT
       else if (sti == 5) FStset(0, FStv(0) * __pow(2.0, IntToF64(F64ToInt(FStv(1)))));         // FSCALE
       else if (sti == 6) FStset(0, __sin(FStv(0)));                                            // FSIN
       else if (sti == 7) FStset(0, __cos(FStv(0)));                                            // FCOS
