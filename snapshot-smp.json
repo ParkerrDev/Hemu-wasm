@@ -1,13 +1,13 @@
 {
  "globals": {
-  "icount": 10456,
+  "icount": 10464,
   "g_ncore": 10112,
   "g_ipi_pending": 10120,
   "g_cpu_st": 8352,
-  "tsc": 1649136,
-  "g_xmm_lo": 1649232,
-  "g_xmm_hi": 1649744,
-  "mem": 10184
+  "tsc": 1649144,
+  "g_xmm_lo": 1649240,
+  "g_xmm_hi": 1649752,
+  "mem": 10192
  },
  "ccpu": {
   "stride": 440,
