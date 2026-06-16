@@ -758,7 +758,9 @@ U0 HleBlit()
 // just drawn) into g_desk, so Present() shows the native cursor and never a torn mid-render frame.
 U0 CaptureFrom(U64 bd)                               // grab a 640x480 8-bit frame at `bd` into g_desk
 { I64 k; if (bd && bd + 307200 <= mem_size) { for (k = 0; k < 307200; k++) g_desk[k] = mem[bd + k]; g_desk_ready = 1; } }
-U0 CaptureDesk() { CaptureFrom(RdMem(0x119ad3d8 + 0x180, 8)); }   // gr.dc2->body
+U0 CaptureDesk() { CaptureFrom(RdMem(g_dc2 + 0x180, 8)); }   // gr.dc2->body (g_dc2 is per-build; the old
+// hardcoded 0x119ad3d8 was the SINGLE-CORE dc2 — on SMP it reads NULL, so g_desk was never captured and
+// Present() showed the live mid-composite buffer (the flicker). Single-core: g_dc2==0x119ad3d8, unchanged.
 
 // ---- HLE the hot z-buffered span-filler GrFillRow(dc,x1,x2,y,z1,z2) = 0x1152cc28 in the fixed Varoom
 // build (~34% of frame + the per-pixel Rand-dither 11.5% that lives INSIDE it). Native reimplementation
