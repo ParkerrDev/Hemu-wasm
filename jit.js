@@ -472,7 +472,9 @@ export function jitCompile(rip) {
         } else {                                                                  // register forms (ST(i))
           const regOK = ((op === 0xD8 || op === 0xDC || op === 0xDE) && sub !== 2 && sub !== 3)   // st0 OP st(i) / st(i) OP st0 / st(i) OP st0,pop
             || (op === 0xD9 && (sub === 0 || sub === 1 || (sub === 4 && sti <= 1)
+              || (sub === 6 && (sti === 6 || sti === 7))                           // FDECSTP / FINCSTP (the pop-discard idiom after FFREE)
               || (sub === 7 && sti === 2)))                                        // FLD st(i) / FXCH / FCHS,FABS / FSQRT
+            || (op === 0xDD && (sub === 0 || sub === 2 || sub === 3))              // FFREE(no-op)/FST/FSTP st(i) — was breaking the JIT block millions of times in HolyCraft's hot F64 path
             || ((op === 0xDB || op === 0xDF) && (sub === 6 || sub === 7));         // FCOMI/FUCOMI (0xDF = ...P, pops) -> EFLAGS
           if (!regOK) break;
           j += 1;                                                                  // consume modrm
@@ -487,6 +489,11 @@ export function jitCompile(rip) {
           else if (op === 0xD9 && sub === 4 && sti === 0) fSt(f, 0, () => { fLd(f, 0); f.op("f64_neg"); });    // FCHS
           else if (op === 0xD9 && sub === 4 && sti === 1) fSt(f, 0, () => { fLd(f, 0); f.op("f64_abs"); });    // FABS
           else if (op === 0xD9 && sub === 7 && sti === 2) fSt(f, 0, () => { fLd(f, 0); f.op("f64_sqrt"); });   // FSQRT (cpu.HC __pow(d,.5); V8's fdlibm pow(x,.5) IS sqrt(x) bit-for-bit)
+          else if (op === 0xD9 && sub === 6 && sti === 6) fInc(f, -1);             // FDECSTP: fsp=(fsp-1)&7
+          else if (op === 0xD9 && sub === 6 && sti === 7) fInc(f, 1);              // FINCSTP: fsp=(fsp+1)&7
+          else if (op === 0xDD && sub === 0) {}                                    // FFREE st(i): no-op (matches cpu.HC OpX87 — no tag model)
+          else if (op === 0xDD && sub === 2) fSt(f, sti, () => fLd(f, 0));         // FST  st(i) = st0
+          else if (op === 0xDD && sub === 3) { fSt(f, sti, () => fLd(f, 0)); fPop(f); }  // FSTP st(i) = st0, then pop
           else if ((op === 0xDB || op === 0xDF) && (sub === 6 || sub === 7)) {     // FCOMI/FUCOMI st0,st(i) -> EFLAGS (the raycaster's F64 compares; were breaking the JIT block into the interpreter)
             materialize(f);                                                        // commit deferred flags first; we keep OF/SF/AF and set ZF/PF/CF (matches cpu.HC FCmpFL)
             fLd(f, 0); f.local_set(5); fLd(f, sti); f.local_set(36);               // a=ST0, b=ST(i)
