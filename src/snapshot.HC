@@ -188,6 +188,11 @@ U0 Frame()
   // shadow compare (RasterVerifyRet) sets g_raster_diffs if native != emulated (wrong function) -> disarm +
   // scan on; after enough clean checks promote to ACTIVE (native render). Self-validating, so a false
   // signature match can never corrupt the game (it just falls back to emulation). Disarm on game exit.
+  if (!g_poly3_scanned) { U64 pa; g_poly3_scanned = 1;       // find GrFillPoly3 ONCE (kernel fn, stable addr) and arm the
+    for (pa = 0x11000000; pa < 0x11C00000; pa++)             // native poly HLE ALWAYS: HolyCraft renders via Fs->draw_it,
+      if (mem[pa]==0x55 && mem[pa+1]==0x48 && mem[pa+2]==0x8B && mem[pa+3]==0xEC && mem[pa+4]==0x48 && mem[pa+5]==0x83 && mem[pa+6]==0xEC && mem[pa+7]==0x58   // which never trips g_game_running.
+       && mem[pa+0x12]==0x48 && mem[pa+0x14]==0x75 && mem[pa+0x15]==0x10 && mem[pa+0x16]==0x4C && mem[pa+0x18]==0x55 && mem[pa+0x19]==0x20 && mem[pa+0x1A]==0x4C && mem[pa+0x1C]==0x7D && mem[pa+0x1D]==0x18) {
+        g_poly3_hle = pa; g_hooktbl[pa & 0xFFFF] = 1; g_jit_rip[(pa ^ (pa >> 16)) & 0xFFFF] = pa; g_jit_n[(pa ^ (pa >> 16)) & 0xFFFF] = -2; break; } }
   if (g_game_running) {
     if (!g_raster_cand) {
       if (g_raster_scan_from < 0x11C00000) { if (g_raster_n < 4) ArmRaster(); }
