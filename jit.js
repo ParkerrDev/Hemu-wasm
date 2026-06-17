@@ -472,7 +472,8 @@ export function jitCompile(rip) {
         } else {                                                                  // register forms (ST(i))
           const regOK = ((op === 0xD8 || op === 0xDC || op === 0xDE) && sub !== 2 && sub !== 3)   // st0 OP st(i) / st(i) OP st0 / st(i) OP st0,pop
             || (op === 0xD9 && (sub === 0 || sub === 1 || (sub === 4 && sti <= 1)
-              || (sub === 7 && sti === 2)));                                       // FLD st(i) / FXCH / FCHS,FABS / FSQRT
+              || (sub === 7 && sti === 2)))                                        // FLD st(i) / FXCH / FCHS,FABS / FSQRT
+            || ((op === 0xDB || op === 0xDF) && (sub === 6 || sub === 7));         // FCOMI/FUCOMI (0xDF = ...P, pops) -> EFLAGS
           if (!regOK) break;
           j += 1;                                                                  // consume modrm
           if (op === 0xD8) {                                                       // st0 = st0 OP st(i)
@@ -486,6 +487,19 @@ export function jitCompile(rip) {
           else if (op === 0xD9 && sub === 4 && sti === 0) fSt(f, 0, () => { fLd(f, 0); f.op("f64_neg"); });    // FCHS
           else if (op === 0xD9 && sub === 4 && sti === 1) fSt(f, 0, () => { fLd(f, 0); f.op("f64_abs"); });    // FABS
           else if (op === 0xD9 && sub === 7 && sti === 2) fSt(f, 0, () => { fLd(f, 0); f.op("f64_sqrt"); });   // FSQRT (cpu.HC __pow(d,.5); V8's fdlibm pow(x,.5) IS sqrt(x) bit-for-bit)
+          else if ((op === 0xDB || op === 0xDF) && (sub === 6 || sub === 7)) {     // FCOMI/FUCOMI st0,st(i) -> EFLAGS (the raycaster's F64 compares; were breaking the JIT block into the interpreter)
+            materialize(f);                                                        // commit deferred flags first; we keep OF/SF/AF and set ZF/PF/CF (matches cpu.HC FCmpFL)
+            fLd(f, 0); f.local_set(5); fLd(f, sti); f.local_set(36);               // a=ST0, b=ST(i)
+            i32c(f, RFL);
+              i32c(f, RFL); f.load("i64_load", 0, 3); i64c(f, ~0x45); f.op("i64_and");   // rfl & ~(ZF|PF|CF)
+              i64c(f, 0x45); i64c(f, 0x40); i64c(f, 0x01); i64c(f, 0);
+              f.local_get(5); f.local_get(36); f.op("f64_lt"); f.op("select");           // a<b  ? CF      : 0
+              f.local_get(5); f.local_get(36); f.op("f64_eq"); f.op("select");           // a==b ? ZF      : prev
+              f.local_get(5); f.local_get(5); f.op("f64_ne"); f.local_get(36); f.local_get(36); f.op("f64_ne"); f.op("i32_or"); f.op("select");  // NaN ? ZF|PF|CF : prev
+              f.op("i64_or");
+            st64(f);
+            if (op === 0xDF) fInc(f, 1);                                           // FCOMIP/FUCOMIP: pop ST0
+          }
           handled = true; }
       } else if (op === 0x98) {                                              // CBW/CWDE/CDQE: sign-extend the accumulator
         if (rexW) wrReg(f, 0, 8, true, () => { rdReg(f, 0, 4, rex); f.op("i64_extend32_s"); });        // CDQE RAX=sext32(EAX)
@@ -587,7 +601,7 @@ export function jitCompile(rip) {
   // sit BEFORE the loopT loop opcode (outside the loop) — register reads inside a 1024-iteration loop
   // never touch memory, which is the main in-game speedup.
   if (rcUsed || rcX87) { const g = new Func(); for (let k = 0; k < 16; k++) if (rcUsed & (1 << k)) { i32c(g, REG + k * 8); g.load("i64_load", 0, 3); g.local_set(RC + k); } if (rcX87) { i32c(g, FSP); g.load("i64_load", 0, 3); g.local_set(FSPLOC); } f.bytes.unshift(...g.bytes); }
-  blk.setBody([{ count: 5, vt: VT.i64 }, { count: 1, vt: VT.f64 }, { count: 13, vt: VT.i64 }, { count: 17, vt: VT.i64 }], f); m.exportFunc("run", blk.index); let inst;
+  blk.setBody([{ count: 5, vt: VT.i64 }, { count: 1, vt: VT.f64 }, { count: 13, vt: VT.i64 }, { count: 17, vt: VT.i64 }, { count: 1, vt: VT.f64 }], f); m.exportFunc("run", blk.index); let inst;   // local 36 = 2nd f64 scratch (FCOMI operands)
   try { inst = new WebAssembly.Instance(new WebAssembly.Module(Uint8Array.from(m.emit())), { env: { mem: MEM, RdMem: RDMEM, WrMem: WRMEM } }); }
   catch (e) { blocks.set(rip, { fn: null, ninstr: 0 }); return 0; }   // unjittable block: fall back to interpreter
   blocks.set(rip, { fn: inst.exports.run, ninstr: n }); blockFn[slotOf(rip)] = inst.exports.run; blockRip[slotOf(rip)] = rip;
