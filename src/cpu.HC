@@ -783,6 +783,7 @@ U0 CaptureDesk() { CaptureFrom(RdMem(g_dc2 + 0x180, 8)); }   // gr.dc2->body (g_
 // (caller frame popped), 0=fall through to the interpreter for the cases we deliberately don't replicate.
 // See memory hemu-raster-hle-spec for the full contract. DEFAULT OFF (g_raster_hle=0); harness/Init arms it.
 U64 g_raster_hle[4], g_raster_cand; I64 g_raster_n, g_raster_calls;  // ACTIVE copies (TempleOS compiles the Gr routine several times — arm them ALL) + the candidate under verify
+U64 g_poly3_hle; I64 g_poly3_calls, g_poly3_scanned, g_poly3_diag;  // HLE of GrFillPoly3 (the z-buffered filled-3D-poly the face-rasterizer uses): do the whole fan + edge-walk + span NATIVELY instead of the JIT'd GrFillTri0. armed by snapshot.HC (prologue scan, once per game).
 // shadow-verify (g_raster_verify=1): run native into a span, capture the z-buffer + collision counters,
 // RESTORE the real buffers, fall through to the emulator, then compare at the return hook. z-buffer +
 // collision are dither-independent, so an exact match proves geometry + gameplay are bit-correct (dither
@@ -800,8 +801,90 @@ U16 RasterRand(U64 fsb)                              // replicate RandU16 (0xc67
   return seed & 0xFFFF; }
 I64 RasterDone(I64 cnt)                              // RAX=cnt, pop ret + 6 args (callee-pop), return to caller
 { reg[0] = cnt; rip = RdMem(reg[4], 8); reg[4] += 8 + 6 * 8; return 1; }
+
+// ===== HLE GrFillPoly3 ============================================================================
+// One filled, z-buffered HORIZONTAL span (mirrors RasterHLE's vert=0 path: DC offset + bbox + clip +
+// per-pixel z-test + probability dither + write). Used by the native poly rasterizer below.
+U0 PolySpan(U64 dc, I64 x1, I64 x2, I64 y, I64 z1, I64 z2)
+{
+  U64 body = *(U64 *)(mem + dc + 0x180), zbuf = *(U64 *)(mem + dc + 0x188), win = *(U64 *)(mem + dc + 0x170), fsb = msr_fsbase;
+  U32 flags = *(U32 *)(mem + dc + 0x1c), col_w = *(U32 *)(mem + dc + 0xa0);
+  I64 stride = *(I32 *)(mem + dc + 0x14), dimA = *(I32 *)(mem + dc + 0x10), dimC = *(I32 *)(mem + dc + 0x18);
+  I64 i, idx, zptr, zslope = 0, zacc, cur_z, clip_lo = 0, clip_hi = 0, count, mode, color, w1, w2, cw;
+  I64 dith_en = 0, dith_rand = 0, bg = *(U32 *)(mem + dc + 0xa4) & 0xFF;
+  if (!body || !zbuf) return;
+  if ((flags >> 0xe) & 1) { x1 += *(I64 *)(mem + win + 0x100); x2 += *(I64 *)(mem + win + 0x100); y += *(I64 *)(mem + win + 0x108); z1 += *(I64 *)(mem + win + 0x110); z2 += *(I64 *)(mem + win + 0x110); }
+  if ((flags >> 0x10) & 1) {
+    if (x1 < *(I64 *)(mem + dc + 0x140)) *(I64 *)(mem + dc + 0x140) = x1; if (x1 > *(I64 *)(mem + dc + 0x148)) *(I64 *)(mem + dc + 0x148) = x1;
+    if (x2 < *(I64 *)(mem + dc + 0x140)) *(I64 *)(mem + dc + 0x140) = x2; if (x2 > *(I64 *)(mem + dc + 0x148)) *(I64 *)(mem + dc + 0x148) = x2;
+    if (y  < *(I64 *)(mem + dc + 0x150)) *(I64 *)(mem + dc + 0x150) = y;  if (y  > *(I64 *)(mem + dc + 0x158)) *(I64 *)(mem + dc + 0x158) = y; }
+  if (y < 0) return;
+  if (x2 < x1) { i = x1; x1 = x2; x2 = i; i = z1; z1 = z2; z2 = i; }
+  if (x2 < 0) return;
+  if (x1 < 0) { clip_lo = -x1; x1 = 0; }
+  if ((flags >> 0xe) & 1) {
+    x1 += *(I64 *)(mem + win + 0xd0); x2 += *(I64 *)(mem + win + 0xd0); if (x1 > *(I64 *)(mem + win + 0xd8)) return;
+    if (x2 > *(I64 *)(mem + win + 0xd8)) { clip_hi = x2 - *(I64 *)(mem + win + 0xd8); x2 = *(I64 *)(mem + win + 0xd8); }
+    y += *(I64 *)(mem + win + 0xe8); if (y < 0) return; if (y > *(I64 *)(mem + win + 0xf0)) return; if (x2 < 0) return; }
+  if (x1 >= dimA) return; if (y >= dimC) return;
+  if (x2 >= dimA) x2 = dimA - 1;
+  count = x2 - x1; idx = y * stride + x1;
+  if (idx < 0 || (x2 - x1 + 1) > 8192 || body + idx + (x2 - x1 + 1) >= mem_size || zbuf + (idx + (x2 - x1 + 1)) * 4 >= mem_size) return;   // bounds guard
+  zptr = zbuf + idx * 4; if (count) zslope = ((z2 - z1) << 32) / count; zacc = z1 << 32; zacc += clip_lo * zslope;
+  color = col_w & 0xFF; w1 = col_w & 0xFFFF; w2 = (col_w >> 16) & 0xFFFF; cw = w1;
+  if ((col_w >> 24) & 0xC0) { dith_en = 1; w2 = (w2 & 0xFF) | (w1 & 0xFF00);
+    if ((col_w >> 24) & 0x80) { dith_rand = 1; if (RasterRand(fsb) < *(U64 *)(mem + dc + 0xb8)) cw = w2; }
+    else { if ((x1 ^ y) & 1) { i = w1; w1 = w2; w2 = i; } cw = w1; } }
+  for (i = x1; i <= x2; i++) {
+    cur_z = zacc >> 32;
+    I64 draw = 1; if (cur_z < 0) draw = 0; else if (cur_z > *(I32 *)(mem + zptr)) draw = 0; else *(I32 *)(mem + zptr) = cur_z;
+    if (draw) { color = cw & 0xFF; mode = (cw >> 8) & 0xFF;
+      if (mode == 1) mem[body + idx] ^= color; else if (mode == 2) { I64 v = mem[body + idx]; if (v != 0xFF && v != bg) (*(U64 *)(mem + dc + 0x130))++; } else mem[body + idx] = color; }
+    if (dith_en) { if (dith_rand) { if (RasterRand(fsb) < *(U64 *)(mem + dc + 0xb8)) cw = w2; else cw = w1; } else { I64 t = w1; w1 = w2; w2 = t; cw = w1; } }
+    idx += 1; zptr += 4; zacc += zslope; }
+}
+
+// scanline-rasterize one triangle (screen coords + per-vertex z), z-interpolated, into horizontal spans.
+U0 PolyTri(U64 dc, I64 ax, I64 ay, I64 az, I64 bx, I64 by, I64 bz, I64 cx, I64 cy, I64 cz)
+{
+  I64 tx, ty, tz, y, xl, xr, zl, zr;
+  F64 tac, xac, zac, xs, zs, tt;
+  if (ay > by) { tx=ax;ax=bx;bx=tx; ty=ay;ay=by;by=ty; tz=az;az=bz;bz=tz; }   // sort a<=b<=c by y
+  if (ay > cy) { tx=ax;ax=cx;cx=tx; ty=ay;ay=cy;cy=ty; tz=az;az=cz;cz=tz; }
+  if (by > cy) { tx=bx;bx=cx;cx=tx; ty=by;by=cy;cy=ty; tz=bz;bz=cz;cz=tz; }
+  if (cy == ay) return;                                                       // zero height
+  for (y = ay; y <= cy; y++) {
+    tac = IntToF64(y - ay) / IntToF64(cy - ay);                               // long edge a->c
+    xac = ax + tac * (cx - ax); zac = az + tac * (cz - az);
+    if (y < by) { if (by == ay) { xs = ax; zs = az; } else { tt = IntToF64(y - ay) / IntToF64(by - ay); xs = ax + tt * (bx - ax); zs = az + tt * (bz - az); } }
+    else        { if (cy == by) { xs = bx; zs = bz; } else { tt = IntToF64(y - by) / IntToF64(cy - by); xs = bx + tt * (cx - bx); zs = bz + tt * (cz - bz); } }
+    if (xac <= xs) { xl = xac; xr = xs; zl = zac; zr = zs; } else { xl = xs; xr = xac; zl = zs; zr = zac; }
+    PolySpan(dc, xl, xr, y, zl, zr);
+  }
+}
+
+I64 PolyDone(I64 cnt) { reg[0] = cnt; rip = RdMem(reg[4], 8); reg[4] += 8 + 3 * 8; return 1; }   // GrFillPoly3 has 3 args (callee-pop)
+
+I64 GrPoly3HLE()        // fires at GrFillPoly3's prologue: fan-triangulate the convex poly + raster each tri natively
+{
+  U64 dc, poly, body, zbuf; I64 n, i, S = 12, ax, ay, az, bx, by, bz, cx, cy, cz;   // CD3I32 = {I32 x,y,z} = 12 bytes
+  dc = RdMem(reg[4] + 8, 8); n = RdMem(reg[4] + 0x10, 8); poly = RdMem(reg[4] + 0x18, 8);
+  body = *(U64 *)(mem + dc + 0x180); zbuf = *(U64 *)(mem + dc + 0x188);
+  if (n < 3 || n > 64 || !body || !zbuf) return 0;                            // no z-buffer / odd n -> let the OS emulate
+  if (poly + n * S >= mem_size) return 0;
+  ax = *(I32 *)(mem + poly); ay = *(I32 *)(mem + poly + 4); az = *(I32 *)(mem + poly + 8);   // fan from poly[0]
+  if (!g_poly3_diag) for (i = 1; i < n - 1; i++) {                                          // g_poly3_diag=1 -> skip fill (isolate arm/return)
+    bx = *(I32 *)(mem + poly + i * S);     by = *(I32 *)(mem + poly + i * S + 4);     bz = *(I32 *)(mem + poly + i * S + 8);
+    cx = *(I32 *)(mem + poly + (i + 1) * S); cy = *(I32 *)(mem + poly + (i + 1) * S + 4); cz = *(I32 *)(mem + poly + (i + 1) * S + 8);
+    PolyTri(dc, ax, ay, az, bx, by, bz, cx, cy, cz);
+  }
+  g_poly3_calls++;
+  return PolyDone(0);
+}
+
 I64 RasterHLE()
 {
+  if (rip == g_poly3_hle && g_poly3_hle && mem[rip] == 0x55 && mem[rip + 7] == 0x58) return GrPoly3HLE();   // GrFillPoly3 (sub rsp,0x58) -> native poly fill
   // safety: only act if rip really is the span-filler prologue (push rbp; mov rbp,rsp via 48 8b ec;
   // sub rsp,0x78) — the armed address is build-specific, so a stale/wrong arm just falls through.
   if (mem[rip] != 0x55 || mem[rip + 1] != 0x48 || mem[rip + 2] != 0x8B || mem[rip + 3] != 0xEC ||
@@ -939,6 +1022,7 @@ U0 Step()
     if (rip == g_ctr_rip && g_ctr_rip) g_ctr_n++;  // diag execution counter (0 = off)
     if (g_raster_n || g_raster_cand) { I64 q; for (q = 0; q < g_raster_n; q++) if (rip == g_raster_hle[q]) { if (RasterHLE()) return; q = 99; }   // native span filler (all armed copies)
       if (rip == g_raster_cand && g_raster_cand) { if (RasterHLE()) return; } }                                               // candidate under shadow-verify
+    if (g_poly3_hle && rip == g_poly3_hle) { if (RasterHLE()) return; }                                                        // native GrFillPoly3 (poly fill)
     if (rip == g_raster_ret && g_raster_ret) RasterVerifyRet();            // shadow-verify: compare emulated vs native at the span filler's return
     if (rip == g_hle_blit) { HleBlit(); return; }   // native fast-path for the dominant compositor blit
     if (rip == g_capture_rip) CaptureDesk();        // grab the finished frame (incl. native cursor) tear-free

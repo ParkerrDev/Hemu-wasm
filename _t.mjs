@@ -101,6 +101,8 @@ const realFps = mainRate * distinct / MF;                                 // wal
 console.error(`MEASURE: ${distinct} distinct / ${presents} presents over ${MF} frames  ->  guestFps~${fps.toFixed(1)}  nonbg=${nonbg().toFixed(1)}%  instr/__main=${((ic1-ic0)/MF/1e6).toFixed(1)}M  wall=${wallMs.toFixed(1)}ms/__main  -> REAL~${realFps.toFixed(1)}fps (${wallMs>16.67?"WALL-bound":"guest-bound"})`);
 console.error(`JIT: ${(100*covNative/Math.max(1,ic1-ic0)).toFixed(1)}% native (${(covNative/1e9).toFixed(2)}B of ${((ic1-ic0)/1e9).toFixed(2)}B), ${covCalls} interp-handoffs/measure, avg ${(covNative/Math.max(1,covCalls)).toFixed(0)} instr/JIT-block`);
 console.error("top JIT break-ops (where it hands back to the interpreter): " + [...brkOps.entries()].sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k,c])=>`${k}×${c}`).join("  "));
+{ const rd64=(n)=>{ try { return Number(dv().getBigUint64(G(n),true)); } catch { return -1; } };
+  console.error(`HLE: game_running=${rd64("g_game_running")} poly3_hle=0x${rd64("g_poly3_hle").toString(16)} poly3_calls=${rd64("g_poly3_calls")} poly3_scanned=${rd64("g_poly3_scanned")} raster_n=${rd64("g_raster_n")} raster_calls=${rd64("g_raster_calls")}`); }
 if (lastFb) { dumpPng("/tmp/hc_play.png", lastFb.u8.subarray(lastFb.a, lastFb.a + lastFb.w * lastFb.h), lastFb.w, lastFb.h); console.error("wrote /tmp/hc_play.png (+ /tmp/hc_after.png)"); }
 console.log("=== final OCR " + (badops.size ? "BADOP:[" + [...badops].join(",") + "]" : "no-badop") + " ===");
 console.log(screenText());
