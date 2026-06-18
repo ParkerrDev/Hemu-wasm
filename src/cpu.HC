@@ -867,11 +867,23 @@ I64 PolyDone(I64 cnt) { reg[0] = cnt; rip = RdMem(reg[4], 8); reg[4] += 8 + 3 * 
 
 I64 GrPoly3HLE()        // fires at GrFillPoly3's prologue: fan-triangulate the convex poly + raster each tri natively
 {
-  U64 dc, poly, body, zbuf; I64 n, i, S = 12, ax, ay, az, bx, by, bz, cx, cy, cz;   // CD3I32 = {I32 x,y,z} = 12 bytes
+  U64 dc, poly, body, zbuf, rmat; I64 n, i, S = 12, ax, ay, az, bx, by, bz, cx, cy, cz;   // CD3I32 = {I32 x,y,z} = 12 bytes
   dc = RdMem(reg[4] + 8, 8); n = RdMem(reg[4] + 0x10, 8); poly = RdMem(reg[4] + 0x18, 8);
   body = *(U64 *)(mem + dc + 0x180); zbuf = *(U64 *)(mem + dc + 0x188);
   if (n < 3 || n > 64 || !body || !zbuf) return 0;                            // no z-buffer / odd n -> let the OS emulate
   if (poly + n * S >= mem_size) return 0;
+  // We rasterize poly points as SCREEN coords. The real GrFillPoly3 first runs dc->transform on every
+  // point (Mat4x4 by dc->r + dc->x/y/z offset, or a custom projection). Only the identity case is truly
+  // screen-space (e.g. HolyCraft, which pre-projects and passes screen polys). If the DC carries a real
+  // transform (Castle Frankenstein's 3D walls set dc->transform=CFTransform + a rotation dc->r), fall
+  // back to the OS's GrFillPoly3 so it transforms first. CDC offsets are stable across builds:
+  // dc->x/y/z @0xD8/0xDC/0xE0 (I32), dc->r @0xC8 (-> 4x4 matrix; identity = 0x100000000 on the diagonal).
+  if (*(I32 *)(mem + dc + 0xd8) || *(I32 *)(mem + dc + 0xdc) || *(I32 *)(mem + dc + 0xe0)) return 0;
+  rmat = *(U64 *)(mem + dc + 0xc8); if (!rmat) return 0;
+  for (i = 0; i < 16; i++) {
+    if (i == 0 || i == 5 || i == 10 || i == 15) { if (*(I64 *)(mem + rmat + i * 8) != 0x100000000) return 0; }
+    else if (*(I64 *)(mem + rmat + i * 8)) return 0;
+  }
   ax = *(I32 *)(mem + poly); ay = *(I32 *)(mem + poly + 4); az = *(I32 *)(mem + poly + 8);   // fan from poly[0]
   if (!g_poly3_diag) for (i = 1; i < n - 1; i++) {                                          // g_poly3_diag=1 -> skip fill (isolate arm/return)
     bx = *(I32 *)(mem + poly + i * S);     by = *(I32 *)(mem + poly + i * S + 4);     bz = *(I32 *)(mem + poly + i * S + 8);
