@@ -1,5 +1,5 @@
 //============================================================================
-// anim.HC — hemu animated entry. The host calls __main once per display frame;
+// anim.HC - hemu animated entry. The host calls __main once per display frame;
 // hemu runs a real x86-64 frame() function (clang) with an incrementing time
 // arg, then presents. Same machinery the TempleOS snapshot will use: host-paced
 // run + present, state persisting in the wasm instance across calls.

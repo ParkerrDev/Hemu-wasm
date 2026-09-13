@@ -1,4 +1,4 @@
-// launch.mjs — drive the TempleOS shell: type a command (CMD=...), optionally tap gameplay keys
+// launch.mjs - drive the TempleOS shell: type a command (CMD=...), optionally tap gameplay keys
 // (KEYS=1), then OCR the screen + dump a PNG. Reuses whoat.mjs's boot/type/OCR machinery.
 //   CMD='Dir("::/Demo/Games");' node --max-old-space-size=3072 launch.mjs
 //   CMD='#include "::/Demo/Games/Caliber/Caliber";' KEYS=1 NAME=caliber node ... launch.mjs
@@ -67,7 +67,7 @@ if (process.env.PROG) {                                  // watch for progress: 
     const pct = 100 * nz / (f.w * f.h);
     console.error(`chunk ${c+1}/${chunks}: ic=${(ic()/1e9).toFixed(1)}B  init=${/nitializ/.test(t)?"Y":"n"}  nonbg=${pct.toFixed(1)}%  | ${first.slice(0,40)}`);
     if (pct < 5) sawBlank = true;
-    else if (sawBlank && pct > 20) { console.error(`>>> INIT COMPLETE at ${(ic()/1e9).toFixed(1)}B instr — terrain is drawing (nonbg ${pct.toFixed(1)}%)`); break; }   // blank -> drawn = game started
+    else if (sawBlank && pct > 20) { console.error(`>>> INIT COMPLETE at ${(ic()/1e9).toFixed(1)}B instr - terrain is drawing (nonbg ${pct.toFixed(1)}%)`); break; }   // blank -> drawn = game started
   }
 } else runS(Number(process.env.BOOT || 400));
 sampling = false;

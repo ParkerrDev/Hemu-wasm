@@ -1,4 +1,4 @@
-// f6real.mjs — drive the REAL site in headless Chromium: boot, click canvas to focus,
+// f6real.mjs - drive the REAL site in headless Chromium: boot, click canvas to focus,
 // press F6 (God Song), watch for page errors / freeze, and screenshot before+after.
 import { chromium } from "playwright-core";
 const EXE = process.env.HOME + "/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome";

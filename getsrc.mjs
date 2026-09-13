@@ -1,4 +1,4 @@
-// getsrc.mjs — have the running OS decompress a file (FileRead handles .Z) and copy it to a RAM
+// getsrc.mjs - have the running OS decompress a file (FileRead handles .Z) and copy it to a RAM
 // mailbox, then dump it to a host file. FILE=::/Demo/Games/Talons.HC.Z OUT=/tmp/talons.HC
 import { compileHolyC } from "../holyc-wasm/src/compiler.js";
 import { createHost } from "../holyc-wasm/src/runtime/host.js";

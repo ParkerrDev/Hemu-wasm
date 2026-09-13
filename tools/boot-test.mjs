@@ -1,4 +1,4 @@
-// boot-test.mjs — compile boot.HC, run the embedded x86-64 kernel in hemu
+// boot-test.mjs - compile boot.HC, run the embedded x86-64 kernel in hemu
 // headless, and confirm it drew the expected framebuffer pattern.
 import { compileHolyC } from "/Users/parkerh/Dev/TempleOS/holyc-wasm/src/compiler.js";
 import { createHost } from "/Users/parkerh/Dev/TempleOS/holyc-wasm/src/runtime/host.js";

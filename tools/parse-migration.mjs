@@ -1,4 +1,4 @@
-// parse-migration.mjs — extract the pc.ram block from a qemu migration stream (snapshot.bin)
+// parse-migration.mjs - extract the pc.ram block from a qemu migration stream (snapshot.bin)
 // into a flat 384 MiB image (live.bin).  This is the LIVE guest RAM qemu-wasm resumes & animates.
 // qemu migration is BIG-ENDIAN.  RAM page stream: each entry = u64(addr|flags); flag bits:
 //   ZERO=0x02 MEM_SIZE=0x04 PAGE=0x08 EOS=0x10 CONTINUE=0x20 XBZRLE=0x40 HOOK=0x80 COMPRESS=0x100
@@ -43,7 +43,7 @@ function parseRamData() {
     const flags = Number(af & 0xFFFn);
     const addr = af & ~0xFFFn;
     if (dbg++ < 8) console.log(`  entry @${(p-8).toString(16)} flags=0x${flags.toString(16)} addr=0x${addr.toString(16)} block=${curBlock}`);
-    if (flags & F.EOS) return;          // standalone marker — no block name, no data
+    if (flags & F.EOS) return;          // standalone marker - no block name, no data
     if (flags & F.MEM_SIZE) {
       // addr field = total ram bytes; then block descriptors until that many bytes accounted
       let remaining = addr;
@@ -65,7 +65,7 @@ function parseRamData() {
     } else if (flags & (F.XBZRLE | F.COMPRESS)) {
       throw new Error(`unsupported page encoding flags=0x${flags.toString(16)} @${p}`);
     } else if (flags === 0) {
-      // a bare page with no data flag — shouldn't happen; bail
+      // a bare page with no data flag - shouldn't happen; bail
       console.log(`bare entry addr=0x${addr.toString(16)} @${p}`); return;
     }
   }
@@ -84,11 +84,11 @@ for (;;) {
   if (t === SEC.START || t === SEC.FULL) {
     const sid = u32(); const nlen = u8(); const idstr = str(nlen); u32(); u32();
     if (idstr === "ram") { ramId = sid; parseRamData(); maybeFooter(); }
-    else { console.log(`reached non-ram section "${idstr}" — stop`); break; }
+    else { console.log(`reached non-ram section "${idstr}" - stop`); break; }
   } else if (t === SEC.PART || t === SEC.END) {
     const sid = u32();
     if (sid === ramId) { parseRamData(); maybeFooter(); if (t === SEC.END) console.log("ram END"); }
-    else { console.log(`non-ram part sid=${sid} — stop`); break; }
+    else { console.log(`non-ram part sid=${sid} - stop`); break; }
   } else { console.log(`unknown section type 0x${t.toString(16)} @${p}; stop`); break; }
 }
 closeSync(out);

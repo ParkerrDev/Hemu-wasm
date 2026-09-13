@@ -1,65 +1,48 @@
-# hemu-wasm — the Holy Emulator
+# HEMU: TempleOS in WebAssembly
 
-> Part of the TempleOS-web family:
-> [TempleOS-web](https://github.com/ParkerrDev/TempleOS-Web) (the site, assembles this repo at build time) ·
-> [holyc-wasm](https://github.com/ParkerrDev/HolyC-wasm) (clone as a SIBLING `../holyc-wasm` — build.mjs, the JIT and every harness import it from there) ·
-> [TerryADavis-archive-transcriber](https://github.com/ParkerrDev/TerryADavis-archive-transcriber).
->
-> Harnesses expect `/tmp/live.bin` (gunzipped `live.bin.gz`) and `/tmp/templeos.raw`
-> (the site's `vendor/images/templeos-hd.qcow2.gz`, flattened).
+HEMU runs the unmodified TempleOS V5.03 kernel from a saved RAM image. Its x86-64 interpreter is written in HolyC and compiled by [HolyC-wasm](https://github.com/ParkerrDev/HolyC-wasm). A JavaScript block JIT emits native WebAssembly for hot guest code. [TempleOS-Web](https://github.com/ParkerrDev/TempleOS-Web) supplies the browser UI, disk image, input and sound.
 
+## Build and check
 
-A clean-room, **debloated, TempleOS-only x86-64 emulator**, written almost
-entirely in **HolyC** and compiled to WebAssembly by holyc-wasm
-(sibling checkout: `../holyc-wasm`). It replaces qemu-wasm.
+Clone HolyC-wasm as the sibling `../holyc-wasm`, or create a lowercase symlink to the checkout. Node.js needs no packages for these commands:
 
-Where QEMU is a generic, multi-architecture, every-device hypervisor (~6,900
-C/H files, ~24 CPU targets), hemu emulates exactly one machine: the PC that
-TempleOS V5.03 runs on — x86-64 + VGA + ATA + PS/2 + PIC/PIT/RTC — and nothing
-else.
+```sh
+node build.mjs
+node diskio-check.mjs
+node fpu-check.mjs
+node --max-old-space-size=3072 guestcheck.mjs
+node --max-old-space-size=3072 input-check.mjs
+node --max-old-space-size=3072 jitrecycle.mjs
+node --max-old-space-size=3072 jitboot.mjs
+```
 
-## Goals / constraints
-- **x86-64 only**, **TempleOS's graphics format only**, everything else deleted.
-- **< 100,000 lines** total.
-- **>= 91% of the code is HolyC.** Only the irreducible host boundary (canvas,
-  keyboard/mouse, disk image, and—if/when we JIT—WebAssembly instantiation) is JS.
-- **Native where possible:** the core runs as real compiled WASM (holyc-wasm),
-  and TempleOS's own hot routines are recognized and run natively (HLE) instead
-  of being emulated instruction-by-instruction.
+The guest harnesses require `/tmp/live.bin` (decompress this repository's `live.bin.gz`) and `/tmp/templeos.raw` (decompress the site's `vendor/images/templeos-hd.qcow2.gz`, then convert with `qemu-img convert -O raw`). `LIVE` and `RAW` override the paths in guestcheck, input-check and jitrecycle. The input check also reads HolyCraft from the sibling TempleOS-Web checkout.
 
-## Layout
-- `src/`      — the emulator, in HolyC (CPU, memory, decode/execute, devices)
-- `host/`     — the thin JS shim (display/input/disk/loop), on holyc-wasm's runtime
-- `tools/`    — build + measurement scripts
-- `examples/` — hand-assembled x86-64 test programs for the core
+`build.mjs` produces both snapshot WASM engines and `snapshot-smp.json`. Rebuild after changing HolyC source. Ship the engines, sidecar, JIT and the matching HolyC runtime together; stale offsets are unsafe. Historical scripts under `tools/` contain machine-specific paths and are not the supported build path.
 
-## Roadmap
-1. [x] Debloat qemu-wasm -> bare bones (see DEBLOAT.md).
-2. [x] x86-64 CPU in HolyC -- full integer ISA + SSE2/F64 + **x87 FPU** + string/bit/LOOP
-       ops + CMPXCHG/XADD, validated vs real clang code, 31/31 tests.
-3. [x] Memory model sized for TempleOS (384 MiB MAlloc'd), identity-mapped, flat segments.
-4. [x] Devices: PIC (8259x2), PIT (IRQ0 scheduler tick), CMOS RTC (advancing clock),
-       LAPIC/HPET MMIO, PS/2 keyboard (IRQ1) + mouse (IRQ12); VGA presented by HLE
-       (read gr.dc2->body) instead of planar emulation.
-5. [x] System/long-mode: control regs, MSRs (FS/GS base), IDT/GDT, INT/IRETQ, CPUID,
-       RDTSC/RDMSR/WRMSR, HLT-idle + IRQ wake.
-6. [x] **Boot real TempleOS V5.03 from a VM-paused qemu snapshot** (tools/bootdump6.py
-       -> tools/bake-regs.mjs -> src/snapregs.HC). hemu runs it **continuously and
-       stably** -- 64M+ instructions, ~3200 timer IRQs, jiffies/RTC advancing, no faults
-       -- renders the desktop, and the real `GrUpdateScrn` composite pipeline runs (HLE-called).
-7. [x] Input path: injected PS/2 keyboard/mouse events deliver IRQs whose handlers wake
-       the focus task (verified: a keypress triggers ~35k-390k guest instrs of processing).
+## Backend guest execution
 
-### Known limitations (honest)
-- The snapshot captures the content tasks (clock, shell, WinMgr) blocked in TempleOS
-  IPC message-waits, so they don't redraw -> the on-screen content is static even though
-  the system is fully live (timer/scheduler/input all run). Waking them needs either a
-  cleaner capture point or delivering the IPC messages they await.
-- **Sound** (PC speaker via PIT ch.2 / port 0x61) is not yet wired; it only fires from a
-  running task, which hits the same blocked-task limitation.
-- Optional HolyC JIT (reuse holyc-wasm's WASM emitter as the backend) -- future.
+`guestexec.js` resolves kernel functions and class layouts from the running OS's symbol tables. `src/guestcall.HC` injects a short kernel call at a core-zero interrupt boundary and restores the interrupted CPU state. TaskExe jobs perform normal guest work. The API exposes `exec`, `include`, `mkdir`, `writeFile`, and `launch`, with request IDs and queued/running/done/failed states.
 
-## Run
-- `node tools/measure.mjs`  -- the 31-check CPU battery.
-- `node --max-old-space-size=3072 tools/snap-run.mjs`  -- boot the TempleOS snapshot
-  headless; writes the rendered desktop to /tmp/hemusnap/screen.ppm.
+Games start in a fresh Servant task through a short Adam job calling PopUp. No command typing or character-by-character TaskMsg injection is involved. FileWrite receives raw bytes staged above the guest allocator's RAM, preserving embedded DolDoc sprites. Already-compressed .Z uploads use FOpen/FBlkWrite so FileWrite cannot recompress them. Launches reject a second active game, report compile/runtime exceptions, and release their slot when the task ends. A running event means the task started; compilation can still fail afterward.
+
+`guestcheck.mjs` exercises execution, failure reporting, directory creation, binary upload, independent persisted-sector readback, disk inclusion, launch cleanup, animation and busy refusal. `jitrecycle.mjs` checks repeated compilation into reused guest addresses. Each cached JIT block validates its decoded bytes at entry, including native dispatch-table calls, before executing.
+
+`guestinput.js` resolves the keyboard bitmap and mouse state through `guestexec.js` metadata. Relative mouse deltas are applied once from the guest's current position, respecting games that call MsSet to recenter. The browser's held-key set is synchronized around each emulation slice, using atomic byte operations for shared memory. Capture hints follow the foreground task's mouse visibility and input ownership. Hosts forward these hints to the UI; pointer lock still requires a user gesture. Frame input polling stops when the 64-entry keyboard FIFO fills, leaving remaining events in the host queue. `input-check.mjs` checks HolyCraft's neutral spawn, idle camera, relative look, held movement, release and a 200-event burst in the live guest.
+
+The catalog smoke harness needs the sibling TempleOS-Web checkout:
+
+```sh
+node --max-old-space-size=3072 game-suite.mjs Talons
+node --max-old-space-size=3072 game-suite.mjs --all
+```
+
+It verifies every asset against its manifest, reads the persisted disk bytes back independently, launches through the public API, exercises game dialogs, and saves screenshots and JSON to `/tmp/hemu-games` (`OUT` overrides this). TOOM also checks movement/fire and its `in_level` state. These are smoke checks, not complete playthroughs.
+
+## Devices and performance
+
+The CPU implements the integer, x87 and SSE instructions used by this TempleOS image. FTST and FNSTSW are covered in both interpreter and JIT tests, including negative values, signed zeros, NaN and infinities; the missing FTST previously made native Sign return +1 for every input. ATA transfers support both 16-bit and 32-bit I/O, including REP INSD/OUTSD. VGA DAC reads and writes preserve the 16-color palette and notify the host when colors change. The host adapter must supply both diskRead and diskWrite.
+
+Interpreter, block JIT and verified graphics HLE form separate execution layers. Keep the HLE candidate verification and rejection path intact. HLE shortcuts must agree with native guest output before activation. The standalone SMP engine shares WASM memory between workers; keep it under separate regression testing. Browser networking for TOOM multiplayer is not implemented.
+
+These checks cover observed workloads and regressions, not complete x86 hardware conformance or complete game playthroughs.

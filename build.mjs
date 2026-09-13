@@ -1,7 +1,8 @@
-// build.mjs — compile the hemu snapshot resumer (HolyC) to WASM using the merged holyc-wasm
+// build.mjs - compile the hemu snapshot resumer (HolyC) to WASM using the merged holyc-wasm
 // compiler, writing snapshot.wasm next to this file (fetched by ../hemu.html).
 //   node build.mjs
 import { compileHolyC } from "../holyc-wasm/src/compiler.js";
+import { GUEST_EXPORTS } from "./guestexec.js";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,20 +10,23 @@ import { fileURLToPath } from "node:url";
 const dir = dirname(fileURLToPath(import.meta.url));
 const srcDir = resolve(dir, "src");
 const src = readFileSync(resolve(srcDir, "snapshot.HC"), "latin1");
+// Backend guest-execution entry points (src/guestcall.HC) exported for guestexec.js (site worker + node
+// harnesses). RdMem/WrMem/Step/RasterHLE are exported by the compiler unconditionally.
 const r = compileHolyC(src, {
   filename: "snapshot.HC",
   lenient: false,
+  exports: GUEST_EXPORTS,
   includeResolver: (p) => { try { return readFileSync(resolve(srcDir, p), "latin1"); } catch { return null; } },
 });
 writeFileSync(resolve(dir, "snapshot.wasm"), Buffer.from(r.bytes));
 console.log(`snapshot.wasm: ${r.bytes.length} bytes, ${r.warnings.length} warnings`);
 for (const w of r.warnings) console.log("  warn:", w);
 
-// SMP build: shared (imported) memory + multi-core snapshot regs + RunCore export — the engine the
+// SMP build: shared (imported) memory + multi-core snapshot regs + RunCore export - the engine the
 // browser SMP workers (BSP + APs over one shared WebAssembly.Memory) load. Single-core build above is
 // unchanged. Saved as snapshot-smp.wasm; needs the SMP snapshot (multi-core capture) + per-core wiring.
 const smp = compileHolyC(src, {
-  filename: "snapshot.HC", lenient: false, sharedMemory: true, defines: { SMP_SNAP: "1" }, exports: ["RunCore"],
+  filename: "snapshot.HC", lenient: false, sharedMemory: true, defines: { SMP_SNAP: "1" }, exports: ["RunCore", ...GUEST_EXPORTS],
   includeResolver: (p) => { try { return readFileSync(resolve(srcDir, p), "latin1"); } catch { return null; } },
 });
 writeFileSync(resolve(dir, "snapshot-smp.wasm"), Buffer.from(smp.bytes));

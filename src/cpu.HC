@@ -1,5 +1,5 @@
 //============================================================================
-// hemu — a clean-room, TempleOS-only x86-64 emulator, written in HolyC and
+// hemu - a clean-room, TempleOS-only x86-64 emulator, written in HolyC and
 // compiled to WebAssembly by holyc-wasm.  CPU core: fetch / decode (prefixes +
 // REX + ModRM + SIB) / execute / EFLAGS, plus a self-checking test battery.
 // None of QEMU is carried over.  Roadmap in README.
@@ -7,7 +7,7 @@
 
 U8 *mem;                            // guest RAM (MAlloc'd so the snapshot can use 100s of MB)
 U64 mem_size;                       // bytes of guest RAM; anything >= this is MMIO (LAPIC/HPET/IOAPIC)
-U8 g_pfx[256];                       // prefix-byte lookup (1 = legacy prefix) — skips an 11-way compare per instr
+U8 g_pfx[256];                       // prefix-byte lookup (1 = legacy prefix) - skips an 11-way compare per instr
 U0 InitMem(U64 sz)
 {
   I64 i;
@@ -16,7 +16,7 @@ U0 InitMem(U64 sz)
   ata_buf = MAlloc(131072);                                  // 256 sectors * 512 B: ATA PIO read staging
 }
 
-// PER-CORE state (reg/rip/rfl/halted/irq_stall/fpu/seg/decode) lives in CCpuState g_cpu_st[] — defined in
+// PER-CORE state (reg/rip/rfl/halted/irq_stall/fpu/seg/decode) lives in CCpuState g_cpu_st[] - defined in
 // snapshot.HC (the parent) BEFORE this include, accessed through #define reg CST.f_reg etc. (CST = this
 // instance's MY_CORE slot). SHARED state (mem, devices, JIT cache, icount, tsc, cr*, idtr/gdtr) stays below.
 I64 icount;
@@ -26,7 +26,7 @@ I64 g_desk_ready; U64 g_capture_rip;
 U64 g_skip_c4, g_skip_vga, g_skip_xlat;  // DEAD dc2->VGA output paths (hemu presents dc2 directly, so the OS's
                                      // dc2->VGA color/planar conversion produces nothing we use): DCBlotColor4
                                      // (4 args), GrUpdateVGAGraphics (0 args), the XLAT palette scanline blit (4 args)
-U64 g_skip_bg;                       // the desktop text/content render (0 args) — LIVE for the desktop, but pure
+U64 g_skip_bg;                       // the desktop text/content render (0 args) - LIVE for the desktop, but pure
                                      // waste behind a fullscreen game; skipped only while g_game_running.
 U64 g_game_running;                  // set by WakeTasks each frame: a task is suspended on its PopUp (a fullscreen
                                      // game/app is up), so the desktop windows behind it are hidden -> don't redraw
@@ -36,13 +36,13 @@ U64 g_jit_rip[65536];                // direct-mapped block cache: the rip occup
                                      // same low 16 bits for EVERY corresponding block -> permanent slot ping-pong)
 I64 g_jit_n[65536];                  // that block's instr count (>0 = JIT'd), 0 = tried+unjittable, -1 = still counting
 I64 g_jit_hot[65536];                // per-slot hotness counter until the compile threshold (64)
-                                     // planar path. We present dc2 directly, so this output is dead — skip both
+                                     // planar path. We present dc2 directly, so this output is dead - skip both
                                      // function bodies (just pop args + return) to refresh faster -> smoother cursor.
 U8 g_hooktbl[65536];                 // rip&0xFFFF -> "maybe a special address" gate: lets Step() skip the four
                                      // 64-bit hook compares for the ~98% of instructions that aren't at one.
                                      // 16-bit (was 8-bit): an 8-bit gate forced every hot fn sharing a hook's
                                      // low byte to stay interp'd -> never JIT'd (was 48% of all chain-breaks).
-U64 ata_words, ata_seccnt, ata_pos, ata_r3, ata_r4, ata_r5;   // ATA PIO read — serve C: sectors (disk == live.bin)
+U64 ata_words, ata_seccnt, ata_pos, ata_r3, ata_r4, ata_r5;   // ATA PIO read - serve C: sectors (disk == live.bin)
 U64 ata_wr, ata_wlba, ata_wcnt;                              // ATA PIO write in progress (lba, count) -> __host_disk_wr
 U8 *ata_buf;
 // g_seg[8] moved into CCpuState (per-core)
@@ -58,8 +58,8 @@ I64 tsc_rate;                        // TSC ticks added per executed instruction
                                      // TSC must continue from the snapshot value and advance, or all
                                      // time freezes. The snapshot restores tsc + sets tsc_rate.
 U64 msr_efer, msr_star, msr_lstar, msr_sfmask, msr_kgsbase, msr_apic;   // msr_fsbase/msr_gsbase moved into CCpuState (per-core)
-U64 g_xmm_lo[NCORES][16], g_xmm_hi[NCORES][16];   // SSE XMM registers — PER-CORE (xmm_lo/xmm_hi #defines in snapshot.HC): an AP suspended mid-XMM must not be clobbered by another core
-I64 g_lockf[NCORES];                  // PER-CORE: 1 = the current instruction had a 0xF0 LOCK prefix (lockf #define in snapshot.HC) — makes the RMW atomic on shared memory
+U64 g_xmm_lo[NCORES][16], g_xmm_hi[NCORES][16];   // SSE XMM registers - PER-CORE (xmm_lo/xmm_hi #defines in snapshot.HC): an AP suspended mid-XMM must not be clobbered by another core
+I64 g_lockf[NCORES];                  // PER-CORE: 1 = the current instruction had a 0xF0 LOCK prefix (lockf #define in snapshot.HC) - makes the RMW atomic on shared memory
 // fsc/fpr/fsp/x87_cw/x87_sw moved into CCpuState (per-core)
 // devices: dual 8259 PICs + 8254 PIT (channel 0 -> IRQ0 = the scheduler tick)
 I64 pic1_base, pic1_mask, pic1_irr, pic1_isr, pic1_initstep; I64 pic2_base, pic2_mask, pic2_irr, pic2_isr, pic2_initstep; I64 pit_reload, pit_div, pit_counter, pit_wlo;
@@ -117,7 +117,7 @@ U64 MmioRd(U64 a, I64 sz)
   U64 off; off = a & 0xFFF;
   if (off == 0x20)  return MyCore() << 24;    // LAPIC APIC_ID register (id in bits 24-31) -> THIS core
   if (off == 0x30)  return 0x50014;           // LAPIC version
-  if (off == 0xF0)  return hpet_ctr;          // HPET main counter (lo) — also LAPIC SVR read
+  if (off == 0xF0)  return hpet_ctr;          // HPET main counter (lo) - also LAPIC SVR read
   if (off == 0xF4 || off == 0xF8) return hpet_ctr >> 32;  // HPET main counter (hi)
   return 0; }
 U0 MmioWr(U64 a, I64 sz, U64 v)
@@ -136,7 +136,7 @@ U0 MmioWr(U64 a, I64 sz, U64 v)
 }
 
 //---------------------------------------------------------------- guest memory
-// WASM loads/stores are little-endian + unaligned-safe, matching x86 — so a
+// WASM loads/stores are little-endian + unaligned-safe, matching x86 - so a
 // pointer-cast deref is one host load instead of a byte loop. Accesses at/above
 // mem_size are device MMIO, routed away from the RAM buffer so they never trap.
 // TempleOS also maps an UNCACHED ALIAS of all RAM at virtual 2^40 + phys (for
@@ -157,7 +157,7 @@ U0 WrMem(U64 a, I64 sz, U64 v)
 
 //---------------------------------------------------------------- fetch / imm
 U64 Fetch8()  { U64 b = mem[rip]; rip++; return b; }
-U64 Fetch32() { U64 v = *(U32 *)(mem + rip); rip += 4; return v; }   // rip is always code in RAM — skip RdMem's MMIO check
+U64 Fetch32() { U64 v = *(U32 *)(mem + rip); rip += 4; return v; }   // rip is always code in RAM - skip RdMem's MMIO check
 U64 Fetch64() { U64 v = RdMem(rip, 8); rip += 8; return v; }
 I64 SignExt8(U64 b)  { b &= 0xFF;       if (b & 0x80)       return b - 0x100;       return b; }
 I64 SignExt32(U64 v) { v &= 0xFFFFFFFF; if (v & 0x80000000) return v - 0x100000000; return v; }
@@ -306,7 +306,7 @@ U0 DoStr(I64 op, I64 sz)
   I64 cmpkind; U64 n, total, i;
   cmpkind = (op == 0xA6 || op == 0xA7 || op == 0xAE || op == 0xAF);   // SCAS/CMPS terminate on ZF
   if (!repf) { StrStep(op, sz); return; }
-  // Bulk fast path for REP MOVS/STOS (forward, flat) — TempleOS's MemCpy/MemSet are REP MOVSQ/STOSQ
+  // Bulk fast path for REP MOVS/STOS (forward, flat) - TempleOS's MemCpy/MemSet are REP MOVSQ/STOSQ
   // over large buffers; emulating them element-by-element through StrStep was the single biggest
   // interpreter cost. Do them as one native copy/fill. (DF=0, no segment override, in-RAM only.)
   if (g_segbase == 0 && !(rfl & F_DF) && reg[1] > 0) {
@@ -340,10 +340,28 @@ U0 Cpuid()  // enough feature bits for TempleOS: FPU/TSC/MSR/PAE/APIC/MMX/FXSR/S
   else if (a == 0x80000000)   { reg[0] = 0x80000008; reg[1] = 0; reg[2] = 0; reg[3] = 0; }
   else if (a == 0x80000001)   { reg[0] = 0; reg[1] = 0; reg[2] = 0x00000001; reg[3] = 0x28100800; }
   else                        { reg[0] = 0; reg[1] = 0; reg[2] = 0; reg[3] = 0; } }
+// VGA DAC state. Palette reads are used by TOOM's 256-color to 16-color dithering.
+U8 vga_dac[768];
+I64 vga_read_pos,vga_write_pos;
+U0 VgaPaletteInit()
+{
+  I64 i,r,g,b,bright;
+  for(i=0;i<16;i++) {
+    bright=(i&8)!=0;
+    r=((i&4)!=0)*42+bright*21;g=((i&2)!=0)*42+bright*21;b=((i&1)!=0)*42+bright*21;
+    if(i==6)g=21;
+    vga_dac[i*3]=r;vga_dac[i*3+1]=g;vga_dac[i*3+2]=b;
+    __host_palette(i,((r*255/63)<<16)|((g*255/63)<<8)|(b*255/63));
+  }
+  vga_read_pos=0;vga_write_pos=0;
+}
 U64 RtcRead(I64 idx)                  // CMOS RTC register read (binary mode, host wall clock)
 { if (idx == 0x0A) return 0; if (idx == 0x0B) return 0x06; return __host_time(idx); }
 U64 IoIn(U64 port)
 {
+  if(port==0x3C9){U64 value=vga_dac[vga_read_pos];vga_read_pos=(vga_read_pos+1)%768;return value;}
+  if(port==0x3C8)return vga_write_pos/3;
+  if(port==0x3C6)return 255;
   if (port == 0x21) return pic1_mask; if (port == 0xA1) return pic2_mask; if (port == 0x40) return pit_counter & 0xFF; if (port == 0x71) return RtcRead(rtc_idx);
   if (port == 0x60) {                                  // PS/2 data: cmd-response, then mouse, then kbd
     if (ps2qh != ps2qt) { I64 b = ps2q[ps2qh & 15]; ps2qh++; return b; }  // command ACK/reset bytes
@@ -369,7 +387,11 @@ U64 IoIn(U64 port)
 U0 IoOut(U64 port, U64 v)
 {
   I64 i;
-  if (port >= 0x3B0 && port <= 0x3DF) return;          // VGA registers — framebuffer is HLE'd, ignore (skip the chain)
+  if(port==0x3C7){vga_read_pos=(v&255)*3;return;}
+  if(port==0x3C8){vga_write_pos=(v&255)*3;return;}
+  if(port==0x3C9){i=vga_write_pos/3;vga_dac[vga_write_pos]=v&63;vga_write_pos=(vga_write_pos+1)%768;
+    if(vga_write_pos%3==0 && i<16)__host_palette(i,((vga_dac[i*3]*255/63)<<16)|((vga_dac[i*3+1]*255/63)<<8)|(vga_dac[i*3+2]*255/63));return;}
+  if (port >= 0x3B0 && port <= 0x3DF) return;          // VGA registers - framebuffer is HLE'd, ignore (skip the chain)
   if (port == 0x1F0 || port == 0x170) {                // ATA data port WRITE (16-bit words during a WRITE command)
     if (ata_wr && ata_words > 0) { *(U16 *)(ata_buf + ata_pos) = v; ata_pos += 2; ata_words--;
       if (ata_words == 0) { __host_disk_wr(ata_wlba, ata_wcnt, ata_buf); ata_wr = 0; } }   // commit to the host overlay
@@ -432,12 +454,25 @@ U0 IoOut(U64 port, U64 v)
   } else if (port == 0x40) {                             // PIT ch0 reload
     if (pit_wlo) { pit_reload = v; pit_wlo = 0; }
     else { pit_reload |= (v << 8); pit_div = pit_reload; if (!pit_div) pit_div = 65536; pit_counter = pit_div; pit_wlo = 1; } } }
+// The ATA data port transfers 16-bit words. An x86 IN/OUT dword transfers two
+// words, including REP INSD/OUTSD used by the V5.03 disk driver.
+U64 IoInWidth(U64 port,I64 width)
+{
+  U64 value=IoIn(port);
+  if ((port==0x1F0 || port==0x170) && width==4) value|=IoIn(port)<<16;
+  return value;
+}
+U0 IoOutWidth(U64 port,U64 value,I64 width)
+{
+  IoOut(port,value);
+  if ((port==0x1F0 || port==0x170) && width==4) IoOut(port,value>>16);
+}
 // String I/O (INS/OUTS, +REP). The ATA PIO data port (0x1F0) flows through these for REP INSW disk
-// reads — IoIn returns blank-disk zeros, so the read completes instead of deadlocking the poller.
+// reads - IoIn returns blank-disk zeros, so the read completes instead of deadlocking the poller.
 U0 DoIns(I64 sz)                                          // INS: [RDI] <- port DX
-{ I64 d; if (rfl & F_DF) d = -sz; else d = sz; if (!repf) { WrMem(reg[7], sz, IoIn(reg[2] & 0xFFFF)); reg[7] += d; return; } while (reg[1] != 0) { WrMem(reg[7], sz, IoIn(reg[2] & 0xFFFF)); reg[7] += d; reg[1]--; } }
+{ I64 d; if (rfl & F_DF) d = -sz; else d = sz; if (!repf) { WrMem(reg[7], sz, IoInWidth(reg[2] & 0xFFFF, sz)); reg[7] += d; return; } while (reg[1] != 0) { WrMem(reg[7], sz, IoInWidth(reg[2] & 0xFFFF, sz)); reg[7] += d; reg[1]--; } }
 U0 DoOuts(I64 sz)                                         // OUTS: port DX <- [RSI]
-{ I64 d; if (rfl & F_DF) d = -sz; else d = sz; if (!repf) { IoOut(reg[2] & 0xFFFF, RdMem(reg[6], sz)); reg[6] += d; return; } while (reg[1] != 0) { IoOut(reg[2] & 0xFFFF, RdMem(reg[6], sz)); reg[6] += d; reg[1]--; } }
+{ I64 d; if (rfl & F_DF) d = -sz; else d = sz; if (!repf) { IoOutWidth(reg[2] & 0xFFFF, RdMem(reg[6], sz), sz); reg[6] += d; return; } while (reg[1] != 0) { IoOutWidth(reg[2] & 0xFFFF, RdMem(reg[6], sz), sz); reg[6] += d; reg[1]--; } }
 U0 CheckIrq()                                            // deliver one pending, unmasked IRQ
 {
   I64 irq, b; b = pic1_irr & ~pic1_mask;
@@ -531,10 +566,10 @@ U0 OpX87(U64 op)
       else if (sub == 2) WrMem(ea, 2, RoundCW(FStv(0)));            // FIST  m16int
       else if (sub == 3) { WrMem(ea, 2, RoundCW(FStv(0))); FPopv(); } // FISTP m16int
       else if (sub == 5) FPush(IntToF64(RdMem(ea, 8)));            // FILD  m64int
-      else if (sub == 4) {                                          // FBLD m80 — packed-BCD load (18 digits + sign)
+      else if (sub == 4) {                                          // FBLD m80 - packed-BCD load (18 digits + sign)
         bcd_i = 0; for (bcd_d = 8; bcd_d >= 0; bcd_d--) { bcd_ng = RdMem(ea + bcd_d, 1); bcd_i = bcd_i * 100 + (bcd_ng >> 4) * 10 + (bcd_ng & 15); }
         if (RdMem(ea + 9, 1) & 0x80) bcd_i = -bcd_i; FPush(IntToF64(bcd_i)); }
-      else if (sub == 6) {                                          // FBSTP m80 — packed-BCD store + pop (x87 float->decimal)
+      else if (sub == 6) {                                          // FBSTP m80 - packed-BCD store + pop (x87 float->decimal)
         bcd_i = RoundCW(FStv(0)); bcd_ng = 0; if (bcd_i < 0) { bcd_ng = 1; bcd_i = -bcd_i; }
         for (bcd_d = 0; bcd_d < 9; bcd_d++) { WrMem(ea + bcd_d, 1, (bcd_i % 10) | ((bcd_i / 10 % 10) << 4)); bcd_i /= 100; }
         WrMem(ea + 9, 1, bcd_ng ? 0x80 : 0); FPopv(); }
@@ -551,7 +586,7 @@ U0 OpX87(U64 op)
   if (op == 0xD9) {
     if (sub == 0) FPush(FStv(sti));                                  // FLD  st(i)
     else if (sub == 1) { a = FStv(0); FStset(0, FStv(sti)); FStset(sti, a); }  // FXCH
-    else if (sub == 4) { if (sti == 0) FStset(0, -FStv(0)); else if (sti == 1) { a = FStv(0); if (a < 0) FStset(0, -a); } }  // FCHS/FABS
+    else if (sub == 4) { if (sti == 0) FStset(0, -FStv(0)); else if (sti == 1) { a = FStv(0); if (a < 0) FStset(0, -a); } else if (sti == 4) { x87_sw &= ~0x0200; FCmpSW(FStv(0), 0.0); } }  // FCHS/FABS/FTST (Sign uses FTST + FNSTSW)
     else if (sub == 5) {                                             // FLD1/FLDL2T/FLDL2E/FLDPI/FLDLG2/FLDLN2/FLDZ
       if (sti == 0) FPush(1.0); else if (sti == 1) FPush(3.32192809488736235); else if (sti == 2) FPush(1.44269504088896341); else if (sti == 3) FPush(3.14159265358979324); else if (sti == 4) FPush(0.30102999566398120); else if (sti == 5) FPush(0.69314718055994531); else if (sti == 6) FPush(0.0); }
     else if (sub == 6) {                                             // F2XM1/FYL2X/FPTAN/FPATAN/FXTRACT/FDECSTP/FINCSTP
@@ -616,7 +651,7 @@ U64 AtomCas(U64 a, U64 e, U64 v, I64 sz) { if (sz==1) return __a_cmpxchg8(mem+a,
 //---------------------------------------------------------------- bit ops (BT/BTS/BTR/BTC)
 // which: 0=BT (test only), 1=BTS (set), 2=BTR (reset), 3=BTC (complement).
 // CF := old bit. For a memory operand the bit index selects the byte (ea+bit/8),
-// so the bit string can exceed the operand width — which is how TempleOS's
+// so the bit string can exceed the operand width - which is how TempleOS's
 // LOCK BTS/BTR lock primitives address bits in a shared word.
 U0 DoBit(I64 which, U64 bit, I64 sz)
 { U64 v, m, old; I64 asz; asz = sz; if (isMem) { ea += bit >> 3; bit &= 7; asz = 1; } else bit &= (sz * 8 - 1); m = 1; m <<= bit;
@@ -631,7 +666,7 @@ U0 DoBit(I64 which, U64 bit, I64 sz)
 
 //---------------------------------------------------------------- FXSAVE / FXRSTOR
 // The scheduler saves/restores FPU+SSE state across task switches with these. The
-// XMM half MUST be exact (HolyC F64 math lives in SSE2 — a task resumed with stale
+// XMM half MUST be exact (HolyC F64 math lives in SSE2 - a task resumed with stale
 // XMM computes garbage, e.g. the WinMgr's refresh timing). x87 regs round-trip as
 // F64 bits in the low 8 bytes of each 16-byte slot (they're empty at task start).
 U0 DoFxsave(U64 a)
@@ -755,7 +790,7 @@ U0 Op0F()
 //---------------------------------------------------------------- one instruction
 // HLE the hot transparent window-compositor blit (its entry = g_hle_blit): run the flat 0xFF-skip
 // copy natively instead of interpreting ~5 instrs/byte, then simulate its callee-clean RET 0x10.
-// Blit(dst_dc@[rsp+8], src_dc@[rsp+16]) — copies src.width*src.height bytes src.body->dst.body.
+// Blit(dst_dc@[rsp+8], src_dc@[rsp+16]) - copies src.width*src.height bytes src.body->dst.body.
 U0 HleBlit()
 {
   U64 ret = RdMem(reg[4], 8), dst_dc = RdMem(reg[4] + 8, 8), src_dc = RdMem(reg[4] + 16, 8);
@@ -772,7 +807,7 @@ U0 HleBlit()
 U0 CaptureFrom(U64 bd)                               // grab a 640x480 8-bit frame at `bd` into g_desk
 { I64 k; if (bd && bd + 307200 <= mem_size) { for (k = 0; k < 307200; k++) g_desk[k] = mem[bd + k]; g_desk_ready = 1; } }
 U0 CaptureDesk() { CaptureFrom(RdMem(g_dc2 + 0x180, 8)); }   // gr.dc2->body (g_dc2 is per-build; the old
-// hardcoded 0x119ad3d8 was the SINGLE-CORE dc2 — on SMP it reads NULL, so g_desk was never captured and
+// hardcoded 0x119ad3d8 was the SINGLE-CORE dc2 - on SMP it reads NULL, so g_desk was never captured and
 // Present() showed the live mid-composite buffer (the flicker). Single-core: g_dc2==0x119ad3d8, unchanged.
 
 // ---- HLE the hot z-buffered span-filler GrFillRow(dc,x1,x2,y,z1,z2) = 0x1152cc28 in the fixed Varoom
@@ -782,12 +817,12 @@ U0 CaptureDesk() { CaptureFrom(RdMem(g_dc2 + 0x180, 8)); }   // gr.dc2->body (g_
 // per-instruction batch-tsc drift (cosmetic, already non-deterministic interp-vs-JIT). Returns 1=handled
 // (caller frame popped), 0=fall through to the interpreter for the cases we deliberately don't replicate.
 // See memory hemu-raster-hle-spec for the full contract. DEFAULT OFF (g_raster_hle=0); harness/Init arms it.
-U64 g_raster_hle[4], g_raster_cand; I64 g_raster_n, g_raster_calls;  // ACTIVE copies (TempleOS compiles the Gr routine several times — arm them ALL) + the candidate under verify
+U64 g_raster_hle[4], g_raster_cand; I64 g_raster_n, g_raster_calls;  // ACTIVE copies (TempleOS compiles the Gr routine several times - arm them ALL) + the candidate under verify
 U64 g_poly3_hle; I64 g_poly3_calls, g_poly3_scanned, g_poly3_diag;  // HLE of GrFillPoly3 (the z-buffered filled-3D-poly the face-rasterizer uses): do the whole fan + edge-walk + span NATIVELY instead of the JIT'd GrFillTri0. armed by snapshot.HC (prologue scan, once per game).
 // shadow-verify (g_raster_verify=1): run native into a span, capture the z-buffer + collision counters,
 // RESTORE the real buffers, fall through to the emulator, then compare at the return hook. z-buffer +
 // collision are dither-independent, so an exact match proves geometry + gameplay are bit-correct (dither
-// colors may differ — they already do interp-vs-JIT). g_raster_diffs/g_raster_checks tally the result.
+// colors may differ - they already do interp-vs-JIT). g_raster_diffs/g_raster_checks tally the result.
 U64 g_raster_verify, g_raster_ret, g_rv_zbuf, g_rv_dc, g_rv_c1, g_rv_c2, g_rv_icount, g_rv_irqc;
 U64 g_dbg_bad[13]; I64 g_dbg_badn;       // forensics: first failing verify (zbad,bod,cnt,idx,flags,colw,c1 e/n,c2 e/n,z e/n,zj)
 U64 g_ctr_rip; I64 g_ctr_n;              // diag: count executions of one rip (arm: poke g_ctr_rip + its g_hooktbl bit)
@@ -898,12 +933,12 @@ I64 RasterHLE()
 {
   if (rip == g_poly3_hle && g_poly3_hle && mem[rip] == 0x55 && mem[rip + 7] == 0x58) return GrPoly3HLE();   // GrFillPoly3 (sub rsp,0x58) -> native poly fill
   // safety: only act if rip really is the span-filler prologue (push rbp; mov rbp,rsp via 48 8b ec;
-  // sub rsp,0x78) — the armed address is build-specific, so a stale/wrong arm just falls through.
+  // sub rsp,0x78) - the armed address is build-specific, so a stale/wrong arm just falls through.
   if (mem[rip] != 0x55 || mem[rip + 1] != 0x48 || mem[rip + 2] != 0x8B || mem[rip + 3] != 0xEC ||
       mem[rip + 4] != 0x48 || mem[rip + 5] != 0x83 || mem[rip + 6] != 0xEC || mem[rip + 7] != 0x78) return 0;
   U64 dc = RdMem(reg[4] + 8, 8);
   // ORIENTATION: the signature matches BOTH GrHLine and GrVLine (transposed source copies with identical
-  // prologue + field loads — Varoom's "second copy" 0x1151b628 is really GrVLine). The `mov r12,[rbp+disp]`
+  // prologue + field loads - Varoom's "second copy" 0x1151b628 is really GrVLine). The `mov r12,[rbp+disp]`
   // displacement byte at +0x1d loads the FIXED coordinate: 0x28 (arg3 y) = HLine, 0x18 (arg1 x) = VLine.
   // Below, x1/x2 = the MOVING span start/end and y = the FIXED coord; vert transposes every field role.
   I64 vert = 0; if (mem[rip + 0x1d] == 0x18) vert = 1; else if (mem[rip + 0x1d] != 0x28) return 0;
@@ -967,7 +1002,7 @@ I64 RasterHLE()
   U64 wzbuf = 0; I64 wzn = 0, cov_row = 0, covM = 1, cc = 1;   // cell = cov_row + (moving>>3)*covM: H walks columns, V walks rows (*80)
   if (vert) covM = 80;
   if (need_cov) { wzbuf = *(U64 *)(mem + 0x119ee470); if (wzbuf && wzbuf < mem_size) { wzn = *(U16 *)(mem + win + 0x30c); if (vert) cov_row = y >> 3; else cov_row = (y >> 3) * 80; cc = wzn >= *(U16 *)(mem + wzbuf + (cov_row + (x1 >> 3) * covM) * 2); } else need_cov = 0; }
-  // bounds guard: a wrong (false-signature-matched) candidate gives garbage args — never write out of RAM.
+  // bounds guard: a wrong (false-signature-matched) candidate gives garbage args - never write out of RAM.
   if (idx < 0 || x2 < x1 || (x2 - x1 + 1) > 4096 || !body || body + idx + (x2 - x1 + 1) * step >= mem_size ||
       zbuf + (idx + (x2 - x1 + 1) * step) * 4 >= mem_size) return 0;
   // ---- shadow-verify: snapshot the span's body + z-buffer + collision BEFORE the native loop ----
@@ -988,12 +1023,12 @@ I64 RasterHLE()
     for (vj = 0; vj < cnt0; vj++) { g_rv_natz[vj] = *(U32 *)(mem + zbuf + (idx0 + vj * step) * 4); g_rv_natb[vj] = mem[body + idx0 + vj * step];
       mem[body + idx0 + vj * step] = g_rv_savb[vj]; *(U32 *)(mem + zbuf + (idx0 + vj * step) * 4) = g_rv_savz[vj]; }
     *(U64 *)(mem + dc + 0x130) = g_rv_c1; *(U64 *)(mem + dc + 0x138) = g_rv_c2; g_rv_c1 = nc1; g_rv_c2 = nc2; g_rv_idx = idx0; g_rv_cnt = cnt0; g_rv_step = step; g_rv_zbuf = zbuf; g_rv_dc = dc; g_rv_icount = icount; g_rv_irqc = irq_count; g_raster_ret = RdMem(reg[4], 8); g_hooktbl[g_raster_ret & 0xFFFF] = 1;
-    g_jit_n[(g_raster_ret ^ (g_raster_ret >> 16)) & 0xFFFF] = -1; g_jit_hot[(g_raster_ret ^ (g_raster_ret >> 16)) & 0xFFFF] = 0;   // keep the RETURN-ADDRESS block interp'd while a verify is in flight — else the JIT runs the ret and RasterVerifyRet never fires (g_raster_ret stays stuck, every later call early-outs as "re-entered")
+    g_jit_n[(g_raster_ret ^ (g_raster_ret >> 16)) & 0xFFFF] = -1; g_jit_hot[(g_raster_ret ^ (g_raster_ret >> 16)) & 0xFFFF] = 0;   // keep the RETURN-ADDRESS block interp'd while a verify is in flight - else the JIT runs the ret and RasterVerifyRet never fires (g_raster_ret stays stuck, every later call early-outs as "re-entered")
     return 0; }
   g_raster_calls++;
   return RasterDone(plotcnt); }
 U0 HookClrAt(U64 a)   // clear a's g_hooktbl bit (a stale bit pins a hot game rip to the interpreter
-{                     // forever) — unless a permanent hook / active HLE / live candidate / live verify-ret shares the slot
+{                     // forever) - unless a permanent hook / active HLE / live candidate / live verify-ret shares the slot
   I64 s = a & 0xFFFF, q; if (!a) return;
   if (s == (g_hle_blit & 0xFFFF) || s == (g_capture_rip & 0xFFFF) || s == (g_skip_c4 & 0xFFFF) || s == (g_skip_vga & 0xFFFF) || s == (g_skip_xlat & 0xFFFF) || s == (g_skip_bg & 0xFFFF)) return;
   if (g_raster_cand && s == (g_raster_cand & 0xFFFF)) return;
@@ -1062,7 +1097,7 @@ U0 Step()
   if (op < 0x40 && (op & 7) == 4) { opn = (op >> 3) & 7; b = Fetch8();        a = RdReg(0, 1);  r = Arith(opn, a, b, 1);  if (opn != 7) WrReg(0, 1, r);  return; }  // ALU AL, imm8
   if (op < 0x40 && (op & 7) == 5) { opn = (op >> 3) & 7; b = FetchImm(sz);    a = RdReg(0, sz); r = Arith(opn, a, b, sz); if (opn != 7) WrReg(0, sz, r); return; }  // ALU eAX, imm
 
-  // hot-path: MOV dominates render/blit loops — handle before the long opcode switch (RdRM/WrRM inlined)
+  // hot-path: MOV dominates render/blit loops - handle before the long opcode switch (RdRM/WrRM inlined)
   if (op == 0x89) { DecodeModRM(); if (isMem) WrMem(ea, sz, RdReg(rg, sz)); else WrReg(rm, sz, RdReg(rg, sz)); return; }  // MOV r/m, r
   if (op == 0x8B) { DecodeModRM(); WrReg(rg, sz, isMem ? RdMem(ea, sz) : RdReg(rm, sz)); return; }                        // MOV r, r/m
   if (op == 0x88) { DecodeModRM(); if (isMem) WrMem(ea, 1, RdReg(rg, 1)); else WrReg(rm, 1, RdReg(rg, 1)); return; }      // MOV r/m8, r8
@@ -1100,7 +1135,7 @@ U0 Step()
     case 0x87: DecodeModRM();                                                                       // XCHG r/m, r (mem form is implicitly LOCKed)
                if (isMem && ea < mem_size && !(ea & (sz - 1))) imm = AtomXchg(ea, RdReg(rg, sz), sz);
                else { imm = RdRM(sz); WrRM(sz, RdReg(rg, sz)); } WrReg(rg, sz, imm); break;
-    case 0x8E: DecodeModRM(); g_seg[rg & 7] = RdRM(2); break;     // MOV Sreg, r/m16 — selector stored, ignored (flat)
+    case 0x8E: DecodeModRM(); g_seg[rg & 7] = RdRM(2); break;     // MOV Sreg, r/m16 - selector stored, ignored (flat)
     case 0x8C: DecodeModRM(); WrRM(2, g_seg[rg & 7]); break;      // MOV r/m16, Sreg
     case 0xC6: DecodeModRM(1); WrRM(1, Fetch8()); break;          // MOV r/m8, imm8
     case 0xC7: DecodeModRM(sz == 2 ? 2 : 4); imm = FetchImm(sz); WrRM(sz, imm); break;  // MOV r/m, imm (imm16 w/ 0x66, else imm32)
@@ -1193,18 +1228,20 @@ U0 Step()
     case 0xFA: rfl &= ~F_IF; break;                                 // CLI
     case 0xFB: rfl |= F_IF; break;                                  // STI
     case 0xE4: d = Fetch8(); WrReg(0, 1, IoIn(d)); break;           // IN AL, imm8
-    case 0xE5: d = Fetch8(); WrReg(0, sz, IoIn(d)); break;          // IN eAX, imm8
+    case 0xE5: d = Fetch8(); WrReg(0, sz, IoInWidth(d, sz)); break;          // IN eAX, imm8
     case 0xE6: d = Fetch8(); IoOut(d, RdReg(0, 1)); break;          // OUT imm8, AL
-    case 0xE7: d = Fetch8(); IoOut(d, RdReg(0, sz)); break;         // OUT imm8, eAX
+    case 0xE7: d = Fetch8(); IoOutWidth(d, RdReg(0, sz), sz); break;         // OUT imm8, eAX
     case 0xEC: WrReg(0, 1, IoIn(reg[2] & 0xFFFF)); break;           // IN AL, DX
-    case 0xED: WrReg(0, sz, IoIn(reg[2] & 0xFFFF)); break;          // IN eAX, DX
+    case 0xED: WrReg(0, sz, IoInWidth(reg[2] & 0xFFFF, sz)); break;          // IN eAX, DX
     case 0xEE: IoOut(reg[2] & 0xFFFF, RdReg(0, 1)); break;          // OUT DX, AL
-    case 0xEF: IoOut(reg[2] & 0xFFFF, RdReg(0, sz)); break;         // OUT DX, eAX
+    case 0xEF: IoOutWidth(reg[2] & 0xFFFF, RdReg(0, sz), sz); break;         // OUT DX, eAX
     case 0xCC: DoInt(3, 0, 0); break;                               // INT3
     case 0xCD: d = Fetch8(); DoInt(d, 0, 0); break;                 // INT n
     case 0xCF: DoIret(); break;                                     // IRETQ
 
     default: g_badop = op; halted = 2; "BADOP op=%X rip=%X b=%X %X %X %X\n", op, rip, mem[rip-2], mem[rip-1], mem[rip], mem[rip+1]; break; } }
+
+#include "guestcall.HC"               // host-injected guest calls (backend execution API); needs Step(), hooks into Run() below
 
 U0 RunTo(U64 target, I64 budget)       // run until rip==target (used to HLE-call a guest function)
 {
@@ -1240,8 +1277,11 @@ U0 Run(I64 maxi)                       // run until icount==maxi (or a fault hal
   while (icount < maxi) {
     if (halted >= 2) break;                                         // bad opcode / fault: stop
     if (halted == 1) {                                             // HLT: idle until an IRQ
+      // A pending host-injected guest call takes the idle HLT with IF=1 as its safe point (the idle
+      // task parked at STI;HLT): it runs to completion here and leaves the CPU HLT'd exactly as found.
+      if (g_gc_state == GC_PENDING && (rfl & F_IF)) { GuestCallRun(); continue; }
       // Fast-forward the dead time: nothing but the PIT advances while halted, so jump straight to
-      // the next tick in ONE step instead of spinning millions of no-op iterations (huge fps win —
+      // the next tick in ONE step instead of spinning millions of no-op iterations (huge fps win -
       // the guest idles between WinMgr refreshes and that idle was costing ~all the wall-clock).
       I64 skip = pit_div ? pit_counter : 1; if (skip < 1) skip = 1; if (skip > maxi - icount) skip = maxi - icount; if (skip < 1) skip = 1;
       if (pit_div) { pit_counter -= skip; if (pit_counter <= 0) { pit_counter = pit_div; pic1_irr |= 1; } }
@@ -1263,13 +1303,13 @@ U0 Run(I64 maxi)                       // run until icount==maxi (or a fault hal
       // run a CHAIN of JIT'd blocks natively (one host round-trip). Cap the chain to one PIT period so
       // IRQ0 still fires on time -- otherwise a guest spin-wait on the timer never wakes (games freeze).
       if (g_jit_rip[slot] == rip && g_jit_n[slot] > 0) { I64 cap = maxi - icount; if (pit_div > 0 && pit_counter > 0 && cap > pit_counter) cap = pit_counter;
-        if (((pic1_irr & ~pic1_mask) || (pic2_irr & ~pic2_mask)) && !(rfl & F_IF)) cap = -cap;   // IRQ pending but IF=0: NEGATIVE cap = break-on-IF -> the chain hands back at the guest's next STI/POPF/IRET (those end blocks flagged bit30) so the IRQ is delivered in the open window below — the JIT-side fix for CLI'd waits (GodSong) instead of the slow single-step escape
+        if (((pic1_irr & ~pic1_mask) || (pic2_irr & ~pic2_mask)) && !(rfl & F_IF)) cap = -cap;   // IRQ pending but IF=0: NEGATIVE cap = break-on-IF -> the chain hands back at the guest's next STI/POPF/IRET (those end blocks flagged bit30) so the IRQ is delivered in the open window below - the JIT-side fix for CLI'd waits (GodSong) instead of the slow single-step escape
         b = __jit_dispatch(cap); }
       else { if (g_jit_rip[slot] != rip) { g_jit_rip[slot] = rip; g_jit_hot[slot] = 0; g_jit_n[slot] = -1; } if (g_jit_n[slot] < 0) { g_jit_hot[slot]++; if (g_jit_hot[slot] > 64) g_jit_n[slot] = __jit_compile(rip); } } }
     if (!b) {                                                                 // not a JIT'd block: interpret a batch
       I64 batch = 64; if (batch > maxi - icount) batch = maxi - icount;
       if (g_jit_on) {                                                         // JIT on: interpret only until the NEXT rip is a JIT'd block, then
-        while (b < batch) {                                                   // hand straight back (else a blind 64-batch buries the JIT — most insns
+        while (b < batch) {                                                   // hand straight back (else a blind 64-batch buries the JIT - most insns
           Step(); b++; if (halted) break;                                     // after a chain break ARE JIT'd, so the batch was ~all the interp cost).
           I64 s2 = (rip ^ (rip >> 16)) & 0xFFFF; if (g_jit_rip[s2] == rip && g_jit_n[s2] > 0) break; }
       } else {
@@ -1279,6 +1319,7 @@ U0 Run(I64 maxi)                       // run until icount==maxi (or a fault hal
     g_hpet_acc += g_hpet_q16 * b; hpet_ctr += g_hpet_acc >> 16; g_hpet_acc &= 0xFFFF; g_tsc_acc  += g_tsc_q16  * b; tsc      += g_tsc_acc  >> 16; g_tsc_acc  &= 0xFFFF;
     if (pit_div) { pit_counter -= b; if (pit_counter <= 0) { pit_counter += pit_div; pic1_irr |= 1; } }  // PIT -> IRQ0
     if (halted) continue;                                                     // HLT/fault: let the outer loop handle it
+    if (g_gc_state == GC_PENDING && (rfl & F_IF)) GuestCallRun();             // host-injected guest call: deliver at the IRQ point (IF=1, instr boundary)
     if ((rfl & F_IF) && ((pic1_irr & ~pic1_mask) || (pic2_irr & ~pic2_mask))) CheckIrq();
     // IRQ0 pending+unmasked but IF=0: a possible stall. Two very different cases share this state and the
     // old watchdog (force one IRQ when irq_stall crosses a threshold) handled them BOTH the same way --

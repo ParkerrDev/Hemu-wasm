@@ -38,7 +38,7 @@ time.sleep(4)
 q("stop"); time.sleep(1)
 regs=hmp("info registers -a"); open("/tmp/hemusnap/regs_smp.txt","w").write(regs)
 hmp("screendump /tmp/hemusnap/smp_cap.ppm")
-# raw physical RAM (0..384MiB) — exactly what hemu loads as guest RAM (QMP form: typed args)
+# raw physical RAM (0..384MiB) - exactly what hemu loads as guest RAM (QMP form: typed args)
 print("pmemsave:", q("pmemsave", val=0, size=402653184, filename="/tmp/hemusnap/live-smp.bin"))
 time.sleep(2)
 sz=os.path.getsize("/tmp/hemusnap/live-smp.bin") if os.path.exists("/tmp/hemusnap/live-smp.bin") else 0

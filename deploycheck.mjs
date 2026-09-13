@@ -1,4 +1,4 @@
-// deploycheck.mjs — validate the DEPLOY artifacts exactly as hemu-worker.js uses them: the prebuilt
+// deploycheck.mjs - validate the DEPLOY artifacts exactly as hemu-worker.js uses them: the prebuilt
 // hemu-wasm/snapshot.wasm (not compile-from-source), the hardcoded G_FS/G_GS/G_TSC offsets, the 60Hz
 // paced loop with fractional dt, and the JIT wiring. Boots the desktop, checks clock rate + distinct
 // fps + non-black, then launches a game (GX/GY) and reports its fps. NOJIT=1 checks the interp fallback.

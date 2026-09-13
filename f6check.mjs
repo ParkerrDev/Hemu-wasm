@@ -1,4 +1,4 @@
-// f6check.mjs — boot desktop, press F6 (God Song), report liveliness + faults.
+// f6check.mjs - boot desktop, press F6 (God Song), report liveliness + faults.
 // Mirrors deploycheck.mjs wiring exactly (prebuilt snapshot.wasm + JIT). NOJIT=1 for interp.
 import { createHost } from "../holyc-wasm/src/runtime/host.js";
 import * as jit from "./jit.js";

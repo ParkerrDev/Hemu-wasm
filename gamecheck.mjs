@@ -1,4 +1,4 @@
-// gamecheck.mjs — measure desktop/game fps under the WORKER-FAITHFUL loop (60Hz pacing + fractional dt +
+// gamecheck.mjs - measure desktop/game fps under the WORKER-FAITHFUL loop (60Hz pacing + fractional dt +
 // 24M budget cap, mirroring hemu-worker.js) with the corrected guest clock. Counts DISTINCT frames (full
 // FNV hash per present) = what the user actually sees.
 //   node gamecheck.mjs                  -> desktop only

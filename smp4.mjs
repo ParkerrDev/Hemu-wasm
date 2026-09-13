@@ -1,4 +1,4 @@
-// smp4.mjs — M4 interleaved multi-core run (correctness-first, pure interpreter, one thread).
+// smp4.mjs - M4 interleaved multi-core run (correctness-first, pure interpreter, one thread).
 // Orchestrator: each macro-step runs core 0's full frame (__main: devices/input/present + Run),
 // then runs each AP (RunCore) which delivers its pending I_WAKE IPI and executes until idle.
 // Decisive question: do all cores cooperate so the multi-core desktop renders (present fires)?
@@ -45,7 +45,7 @@ const rd = (a) => Number(dv().getBigUint64(a, true));
 inst.exports.__main();                            // first frame: loads live-smp.bin + SetSnapRegs (sets g_ncore + all cores)
 const ICOUNT = G("icount"), NCORE = rd(G("g_ncore")), IPI = G("g_ipi_pending");
 console.log("g_ncore =", NCORE);
-if (NCORE < 2) { console.log("FAIL: g_ncore<2 — SMP snapregs not applied"); process.exit(1); }
+if (NCORE < 2) { console.log("FAIL: g_ncore<2 - SMP snapregs not applied"); process.exit(1); }
 { const base = G("g_cpu_st"), ST = 440;          // dump each core's seeded state (rip@128 rfl@136 halted@144)
   for (let k = 0; k < NCORE; k++) console.log(`  core ${k} seeded: rip=0x${rd(base+k*ST+128).toString(16)} rfl=0x${rd(base+k*ST+136).toString(16)} halted=${rd(base+k*ST+144)} IF=${(rd(base+k*ST+136)>>9)&1}`); }
 if (process.env.DUMP) process.exit(0);

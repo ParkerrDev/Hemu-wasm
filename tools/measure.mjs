@@ -1,4 +1,4 @@
-// measure.mjs — compile hemu's test entry (test.HC, which #includes cpu.HC) with
+// measure.mjs - compile hemu's test entry (test.HC, which #includes cpu.HC) with
 // holyc-wasm, run the self-checking battery headless, report correctness + speed.
 import { compileHolyC } from "/Users/parkerh/Dev/TempleOS/holyc-wasm/src/compiler.js";
 import { createHost } from "/Users/parkerh/Dev/TempleOS/holyc-wasm/src/runtime/host.js";

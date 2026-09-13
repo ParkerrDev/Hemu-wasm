@@ -1,4 +1,4 @@
-// m2atomic.mjs — SMP M2 proof: two REAL worker_threads, one shared WebAssembly.Memory,
+// m2atomic.mjs - SMP M2 proof: two REAL worker_threads, one shared WebAssembly.Memory,
 // native WASM atomics. Each worker runs a HolyC loop hammering a shared counter N times.
 //   atomic   (__a_add64) -> final == 2*N exactly (no lost updates)
 //   nonatomic (*p += 1)  -> final  < 2*N      (RMW races lose updates)

@@ -1,4 +1,4 @@
-// smptalons.mjs — launch Talons on the multi-core engine and show its parallel MPDoPanels workers
+// smptalons.mjs - launch Talons on the multi-core engine and show its parallel MPDoPanels workers
 // running on the APs. Orchestrator: core 0 on the JIT (fast: desktop, shell, Talons main, the Spawns
 // + I_WAKE IPIs), APs via RunCore (IPI-woken, pure interp). Types the include at the shell prompt.
 import { compileHolyC } from "../holyc-wasm/src/compiler.js";

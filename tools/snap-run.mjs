@@ -1,4 +1,4 @@
-// snap-run.mjs — boot real TempleOS in hemu from the qemu core.elf RAM snapshot.
+// snap-run.mjs - boot real TempleOS in hemu from the qemu core.elf RAM snapshot.
 import { compileHolyC } from "/Users/parkerh/Dev/TempleOS/holyc-wasm/src/compiler.js";
 import { createHost } from "/Users/parkerh/Dev/TempleOS/holyc-wasm/src/runtime/host.js";
 import { readFileSync, openSync, readSync, writeFileSync } from "node:fs";
@@ -16,7 +16,7 @@ const includeResolver = (p) => { try { return readFileSync(resolve(srcDir, p), "
 const r = compileHolyC(src, { filename: "snapshot.HC", lenient: false, includeResolver });
 console.log(`compiled snapshot.HC: ${r.bytes.length} bytes, ${r.warnings.length} warnings`);
 
-// A ".bin" snapshot is a FLAT image (offset == guest physical address) — e.g. live.bin extracted
+// A ".bin" snapshot is a FLAT image (offset == guest physical address) - e.g. live.bin extracted
 // from a qemu migration stream.  A ".elf" is a core dump (PT_LOAD segments).
 const FLAT = ELF.endsWith(".bin");
 const fd = openSync(ELF, "r");

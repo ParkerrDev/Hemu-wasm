@@ -41,4 +41,4 @@ console.log(`interpreter: ${a.ms.toFixed(2)} ms/frame`);
 console.log(`JIT on:      ${b.ms.toFixed(2)} ms/frame   speedup ${(a.ms / b.ms).toFixed(2)}x`);
 let d = 0; for (let i = 0; i < a.fb.length; i++) if (a.fb[i] !== b.fb[i]) d++;
 console.log(`pixel diff: ${d}/${a.fb.length} (${(100 * d / a.fb.length).toFixed(2)}%)`);
-console.log(d === 0 ? "IDENTICAL — JIT correct on real OS" : d < a.fb.length * 0.02 ? "tiny diff (clock/cursor phase)" : "LARGE diff — JIT corrupts");
+console.log(d === 0 ? "IDENTICAL - JIT correct on real OS" : d < a.fb.length * 0.02 ? "tiny diff (clock/cursor phase)" : "LARGE diff - JIT corrupts");

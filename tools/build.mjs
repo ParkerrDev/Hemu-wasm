@@ -1,4 +1,4 @@
-// build.mjs — compile the hemu browser entries (boot.HC, anim.HC) to host/*.wasm.
+// build.mjs - compile the hemu browser entries (boot.HC, anim.HC) to host/*.wasm.
 import { compileHolyC } from "/Users/parkerh/Dev/TempleOS/holyc-wasm/src/compiler.js";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";

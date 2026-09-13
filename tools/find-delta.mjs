@@ -1,4 +1,4 @@
-// find-delta.mjs — locate the relocation delta between the single-core (live.bin) and multi-core
+// find-delta.mjs - locate the relocation delta between the single-core (live.bin) and multi-core
 // (live-smp.bin) snapshots by finding known code signatures (the hardcoded present addresses) from
 // live.bin inside live-smp.bin. If a constant delta exists, the multi-core present addresses =
 // single-core address + delta.

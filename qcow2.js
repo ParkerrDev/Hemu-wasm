@@ -1,4 +1,4 @@
-// qcow2.js — minimal read-only qcow2 reader for hemu's ATA disk (browser, no deps).
+// qcow2.js - minimal read-only qcow2 reader for hemu's ATA disk (browser, no deps).
 // hemu's __host_disk(lba,count,buf) calls reader.readInto(lba,count,u8,dst) to stage
 // real C: sectors into guest RAM. Sparse: unallocated clusters read back as zeros.
 // All multi-byte fields are big-endian (qcow2 spec).

@@ -1,6 +1,6 @@
-// asksym.mjs — resolve TempleOS symbol addresses by ASKING THE RUNNING OS: type HolyC into the
+// asksym.mjs - resolve TempleOS symbol addresses by ASKING THE RUNNING OS: type HolyC into the
 // emulated shell that POKES each &symbol into a fixed guest-RAM mailbox, then read the mailbox
-// from the host. No OCR, no reverse engineering — the OS's own compiler resolves the names.
+// from the host. No OCR, no reverse engineering - the OS's own compiler resolves the names.
 //   node asksym.mjs JobQue mp_cnt Spawn        (default set below)
 // Output: JSON { name: "0xADDR", ... } on stdout + human log on stderr.
 import { compileHolyC } from "../holyc-wasm/src/compiler.js";

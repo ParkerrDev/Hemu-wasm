@@ -1,4 +1,4 @@
-// evalq.mjs — evaluate guest I64 expressions in the running OS and print them. The OS compiler
+// evalq.mjs - evaluate guest I64 expressions in the running OS and print them. The OS compiler
 // resolves the names. EXPRS='mp_cnt;Fs->num;...' (semicolon-separated). Reuses getsrc boot machinery.
 import { compileHolyC } from "../holyc-wasm/src/compiler.js";
 import { createHost } from "../holyc-wasm/src/runtime/host.js";

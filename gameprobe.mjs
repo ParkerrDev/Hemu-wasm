@@ -1,4 +1,4 @@
-// gameprobe.mjs — launch a game from the Ctrl+M menu and report (a) every distinct unsupported
+// gameprobe.mjs - launch a game from the Ctrl+M menu and report (a) every distinct unsupported
 // opcode it hits (BADOP), (b) a PNG of the result. Compiles snapshot.HC fresh (picks up src edits
 // without a rebuild). NOJIT=1 = pure interpreter (clean BADOP attribution).
 //   node --max-old-space-size=3072 gameprobe.mjs               -> snap the Ctrl+M menu to /tmp/menu.png

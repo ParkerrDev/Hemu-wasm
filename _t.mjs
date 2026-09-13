@@ -1,4 +1,4 @@
-// _t.mjs — install HolyCraft to C:/Home via the OS's own FileWrite (with TOS_NATIVE), #include it
+// _t.mjs - install HolyCraft to C:/Home via the OS's own FileWrite (with TOS_NATIVE), #include it
 // (real HolyC compiles it -> compile errors show up in the OCR), then measure native fps while turning
 // the camera, and dump PNGs.  Run from hemu-wasm:   node --max-old-space-size=3072 _t.mjs
 import { compileHolyC } from "../holyc-wasm/src/compiler.js";

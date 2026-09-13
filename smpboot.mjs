@@ -1,7 +1,7 @@
-// smpboot.mjs — M1: boot single-core over an IMPORTED SHARED memory (the SMP substrate). Compiles
+// smpboot.mjs - M1: boot single-core over an IMPORTED SHARED memory (the SMP substrate). Compiles
 // snapshot.HC with sharedMemory:true (module imports env.mem shared), the host creates the shared
 // WebAssembly.Memory and sets the per-instance __sp / __core globals. Verifies the desktop still
-// boots + renders (no regression) — proving the shared-memory build works before adding workers.
+// boots + renders (no regression) - proving the shared-memory build works before adding workers.
 import { compileHolyC } from "../holyc-wasm/src/compiler.js";
 import { createHost } from "../holyc-wasm/src/runtime/host.js";
 import * as jit from "./jit.js";
@@ -43,7 +43,7 @@ host.env.mem = sharedMem;                                   // <-- the imported 
 jit.jitReset();
 inst = await WebAssembly.instantiate(mod, { env: host.env });
 console.log("exports has __core:", "__core" in inst.exports, " __sp:", "__sp" in inst.exports, " memory===shared:", inst.exports.memory === sharedMem);
-inst.exports.__sp.value = 0x1000000n;     // STACK_TOP (16MiB) — this worker's shadow stack
+inst.exports.__sp.value = 0x1000000n;     // STACK_TOP (16MiB) - this worker's shadow stack
 inst.exports.__core.value = CORE;         // which core this worker runs
 host.attach(inst); inst.exports.__rt_init();
 const dv = () => new DataView(inst.exports.memory.buffer);

@@ -64,7 +64,7 @@ function test(name, bytes, inReg, inRfl, inMem, flagMask = 0x8D5n) {   // compar
 const R = (o) => { const a = []; for (let i = 0; i < 16; i++) a.push(o[i] ?? 0n); return a; };
 const CF0 = 0x2n, CF1 = 0x3n;   // rfl base (bit1=1 always) with CF=0 / CF=1
 
-// ---- ADC/SBB (the complex carry-in flags) — random + adversarial, 8/16/32/64-bit ----
+// ---- ADC/SBB (the complex carry-in flags) - random + adversarial, 8/16/32/64-bit ----
 for (let t = 0; t < 400; t++) {
   const a = rnd(), b = rnd(), cf = (t & 1) ? CF1 : CF0;
   test("adc rax,rbx", [0x48, 0x11, 0xD8], R({ 0: a, 3: b }), cf);
@@ -124,4 +124,4 @@ console.log(`jitdiff1: ${pass} pass, ${fail} fail`);
 console.log("failing ops:", Object.keys(failByName).length ? "" : "(none)");
 for (const n of Object.keys(failByName).sort((a, b) => failByName[b] - failByName[a])) console.log(`   ${n}: ${failByName[n]} fail / ${(passByName[n] || 0) + failByName[n]} total`);
 for (const f of fails) console.log("  e.g. " + f);
-console.log(fail === 0 ? "ALL VALUES MATCH THE INTERPRETER — JIT new ops are bit-correct" : "VALUE MISMATCH — JIT op bug");
+console.log(fail === 0 ? "ALL VALUES MATCH THE INTERPRETER - JIT new ops are bit-correct" : "VALUE MISMATCH - JIT op bug");

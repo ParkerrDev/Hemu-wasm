@@ -1,4 +1,4 @@
-// smpmt.mjs — REAL multi-threaded SMP: one BSP worker + (NCORE-1) AP workers, each a hemu instance
+// smpmt.mjs - REAL multi-threaded SMP: one BSP worker + (NCORE-1) AP workers, each a hemu instance
 // over ONE shared WebAssembly.Memory, running in PARALLEL (not interleaved). This is the M6 engine
 // core: the browser port is the same shape with Web Workers + OffscreenCanvas instead of node
 // worker_threads + a PNG dump. Proves real-parallel SMP works (desktop renders; games run on all cores).
@@ -82,7 +82,7 @@ if (isMainThread) {
   async function bsp() {
     inst.exports.__rt_init();                              // ONLY the BSP initializes shared globals
     inst.exports.__main();                                 // first frame -> SetSnapRegs seeds g_cpu_st[0..3] + g_ncore
-    log(`BSP: g_ncore=${rd(globals.g_ncore)} — booting (APs held until prompt)`);
+    log(`BSP: g_ncore=${rd(globals.g_ncore)} - booting (APs held until prompt)`);
     // typing helpers (set-1 scancodes)
     const SC={a:0x1E,b:0x30,c:0x2E,d:0x20,e:0x12,f:0x21,g:0x22,h:0x23,i:0x17,j:0x24,k:0x25,l:0x26,m:0x32,n:0x31,o:0x18,p:0x19,q:0x10,r:0x13,s:0x1F,t:0x14,u:0x16,v:0x2F,w:0x11,x:0x2D,y:0x15,z:0x2C,"0":0x0B,"1":0x02,"2":0x03,"3":0x04,"4":0x05,"5":0x06,"6":0x07,"7":0x08,"8":0x09,"9":0x0A," ":0x39,"=":0x0D,";":0x27,"\n":0x1C,",":0x33,".":0x34,"/":0x35,"-":0x0C,"'":0x28,"[":0x1A,"]":0x1B,"\\":0x2B};
     const SH={"*":"8","(":"9",")":"0","&":"7","_":"-","+":"=",":":";","\"":"'","{":"[","}":"]","|":"\\","<":",",">":".","?":"/","!":"1","@":"2","#":"3","$":"4","%":"5","^":"6"};
