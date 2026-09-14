@@ -496,9 +496,9 @@ export function jitCompile(rip) {
           if (op === 0xD8) {                                                       // st0 = st0 OP st(i)
             fLd(f, sti); f.local_set(5); const W = sub === 1 ? "f64_mul" : sub === 0 ? "f64_add" : (sub === 4 || sub === 5) ? "f64_sub" : "f64_div"; const rev = sub === 5 || sub === 7; fSt(f, 0, () => { if (rev) { f.local_get(5); fLd(f, 0); } else { fLd(f, 0); f.local_get(5); } f.op(W); });
           } else if (op === 0xDC) {                                                // st(i) = st(i) OP st0
-            fLd(f, 0); f.local_set(5); const W = sub === 1 ? "f64_mul" : sub === 0 ? "f64_add" : (sub === 4 || sub === 5) ? "f64_sub" : "f64_div"; const rev = sub === 5 || sub === 7; fSt(f, sti, () => { if (rev) { f.local_get(5); fLd(f, sti); } else { fLd(f, sti); f.local_get(5); } f.op(W); });
+            fLd(f, 0); f.local_set(5); const W = sub === 1 ? "f64_mul" : sub === 0 ? "f64_add" : (sub === 4 || sub === 5) ? "f64_sub" : "f64_div"; const rev = sub === 4 || sub === 6; fSt(f, sti, () => { if (rev) { f.local_get(5); fLd(f, sti); } else { fLd(f, sti); f.local_get(5); } f.op(W); });
           } else if (op === 0xDE) {                                                // st(i) = st(i) OP st0, then POP  (FADDP/FMULP/FSUBP/FSUBRP/FDIVP/FDIVRP) - matches cpu.HC OpX87
-            fLd(f, 0); f.local_set(5); const W = sub === 1 ? "f64_mul" : sub === 0 ? "f64_add" : (sub === 4 || sub === 5) ? "f64_sub" : "f64_div"; const rev = sub === 5 || sub === 7; fSt(f, sti, () => { if (rev) { f.local_get(5); fLd(f, sti); } else { fLd(f, sti); f.local_get(5); } f.op(W); }); fPop(f);
+            fLd(f, 0); f.local_set(5); const W = sub === 1 ? "f64_mul" : sub === 0 ? "f64_add" : (sub === 4 || sub === 5) ? "f64_sub" : "f64_div"; const rev = sub === 4 || sub === 6; fSt(f, sti, () => { if (rev) { f.local_get(5); fLd(f, sti); } else { fLd(f, sti); f.local_get(5); } f.op(W); }); fPop(f);
           } else if (op === 0xD9 && sub === 0) fPush(f, () => fLd(f, sti));        // FLD st(i)
           else if (op === 0xD9 && sub === 1) { fLd(f, 0); f.local_set(5); fSt(f, 0, () => fLd(f, sti)); fSt(f, sti, () => f.local_get(5)); }  // FXCH
           else if (op === 0xD9 && sub === 4 && sti === 0) fSt(f, 0, () => { fLd(f, 0); f.op("f64_neg"); });    // FCHS

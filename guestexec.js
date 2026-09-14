@@ -74,7 +74,7 @@ export function createGuestExec(opts) {
   const rdStr = (a, max = 96) => { let s = ""; for (let i = 0; i < max; i++) { const c = rd8(a + i); if (!c) break; s += String.fromCharCode(c); } return s; };
 
   const S = {}, G = {};                             // resolved functions / global variable addresses
-  const CT = { ...CTASK_BOOT }, CJ = { ...CJOB_BOOT }, CJC = { ...CJOBCTRL_BOOT }, INPUT = {};
+  const CT = { ...CTASK_BOOT }, CJ = { ...CJOB_BOOT }, CJC = { ...CJOBCTRL_BOOT }, INPUT = {}, DISPLAY = {};
   let ready = false, probeResult = null, symbols = null;
   const stats = { calls: 0, steps: 0, jobs: 0 };
 
@@ -173,6 +173,15 @@ export function createGuestExec(opts) {
       // the single-core image's fixed addresses.
       G.kbd = resolveVar("kbd", "KBD", warnings);
       G.ms = resolveVar("ms", "MS", warnings);
+      // Read the same FPS value the guest prints, using this snapshot's layout.
+      // Resolve once during the existing probe; sampling needs only two loads.
+      G.winmgr = resolveVar("winmgr", "WINMGR", warnings);
+      const display = classMembers("CWinMgrGlbls");
+      for (const name of ["fps", "updates"]) {
+        delete DISPLAY[name];
+        const member = display?.members.get(name);
+        if (G.winmgr && member?.size === 8 && member.offset >= 0 && member.offset + 8 <= display.size && inRam(G.winmgr + member.offset)) DISPLAY[name] = G.winmgr + member.offset;
+      }
       const kb = classMembers("CKbdStateGlbls"), mouse = classMembers("CMsStateGlbls");
       if (G.kbd && kb?.members.get("down_bitmap")?.size === 32) INPUT.down = G.kbd + kb.members.get("down_bitmap").offset;
       for (const name of ["pos", "lb", "rb", "show"]) {
@@ -424,7 +433,13 @@ export function createGuestExec(opts) {
       capture:!!(valid && ((!rd8(INPUT.show)) || (drawing && (inhibit & 0x28) === 0x28))),
       task, game:!!activeLaunch};
   }
+  function frameStats() {
+    if (!ready || !DISPLAY.fps || !DISPLAY.updates) return null;
+    views();
+    const fps = dv.getFloat64(gBase + DISPLAY.fps, true), updates = dv.getBigUint64(gBase + DISPLAY.updates, true);
+    return Number.isFinite(fps) && fps >= 0 && fps <= 10000 ? {fps, updates: Number(updates)} : null;
+  }
   const symbolNames = (re) => symbols ? [...symbols.map.entries()].filter(([n]) => re.test(n)).map(([n, es]) => n + ":" + es.map((e) => "0x" + e.type.toString(16)).join("/")) : [];
-  return { probe, tick, info, inputState, taskInfo, taskRing, exec, include, launch, writeFile, mkdir, popup, call, symbolNames, status: (id) => (reqs.get(id) || {}).last || null,
+  return { probe, tick, info, inputState, frameStats, taskInfo, taskRing, exec, include, launch, writeFile, mkdir, popup, call, symbolNames, status: (id) => (reqs.get(id) || {}).last || null,
     get ready() { return ready; }, syms: S, vars: G, offsets: { CT, CJ, CJC }, scratch: { base: scrBase, size: scrSize, data: scrBase + SCR.DATA, dataSize, text: scrBase + SCR.TEXT }, rd64, rd8, rdBytes, rdStr, wrBytes, wr64 };
 }

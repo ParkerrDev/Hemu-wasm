@@ -12,6 +12,11 @@ U0 FpuBegin(F64 value,U64 status) {
   reg[0]=0x123456789ABC0000; rip=4096; halted=0;
   mem[4096]=0xD9; mem[4097]=0xE4; mem[4098]=0xDF; mem[4099]=0xE0; mem[4100]=0xF4;
 }
+U0 FpuArithBegin(U64 op,U64 modrm,F64 a,F64 b,I64 top) {
+  fsp=top; FStset(0,a); FStset(modrm&7,b); x87_sw=0; rfl=0xAD7; rip=4096; halted=0;
+  mem[4096]=op;mem[4097]=modrm;mem[4098]=0xF4;
+}
+F64 FpuValue(I64 slot){return FStv(slot);}
 U64 FpuProbe(I64 n) {
   switch(n) {
     case 0:return x87_sw; case 1:return reg[0]; case 2:return rfl; case 3:return fsp;
@@ -22,7 +27,7 @@ U64 FpuProbe(I64 n) {
   return 0;
 }
 `;
-const c=compileHolyC(source,{filename:'snapshot.HC',lenient:false,exports:['InitMem','FpuBegin','FpuProbe'],includeResolver:p=>readFileSync(new URL(p,dir),'latin1')});
+const c=compileHolyC(source,{filename:'snapshot.HC',lenient:false,exports:['InitMem','FpuBegin','FpuProbe','FpuArithBegin','FpuValue'],includeResolver:p=>readFileSync(new URL(p,dir),'latin1')});
 const host=createHost(),{instance}=await WebAssembly.instantiate(c.bytes,{env:host.env}),ex=instance.exports;
 host.attach(instance);ex.__rt_init();ex.InitMem(8192n);
 const probe=n=>ex.FpuProbe(BigInt(n));
@@ -40,3 +45,19 @@ for(const mode of ['interpreter','jit'])for(const [value,flags] of [[-2,0x100],[
   assert.equal(probe(4),bits,'operand preserved');
 }
 console.log('FTST/FNSTSW: negative, positive, both zeros, NaN and infinities match in interpreter and JIT.');
+
+// Intel SDM opcode tables: /4 and /6 compute ST0 op ST(i) for D8, DC and DE,
+// while /5 and /7 compute ST(i) op ST0. DC/DE store in ST(i), DE also pops.
+let cases=0;
+for(const mode of ['interpreter','jit'])for(const op of [0xD8,0xDC,0xDE])
+for(const slot of [1,3])for(const top of [0,3,7])for(const [a,b] of [[12,3],[-7,2]])
+for(const [sub,expected] of [[0,a+b],[1,a*b],[4,a-b],[5,b-a],[6,a/b],[7,b/a]]){
+  ex.FpuArithBegin(BigInt(op),BigInt(0xC0+sub*8+slot),a,b,BigInt(top));
+  if(mode==='jit'){jit.jitReset();assert.equal(jit.jitCompile(4096),1);assert.equal(jit.jitRun(4096),1);}
+  else ex.Step();
+  const dest=op===0xD8?0:slot-(op===0xDE?1:0);
+  assert.equal(ex.FpuValue(BigInt(dest)),expected,`${mode} opcode ${op.toString(16)}/${sub} ST${slot} TOP${top}`);
+  assert.equal(probe(3),BigInt((top+(op===0xDE?1:0))&7),'correct stack pop');
+  assert.equal(probe(2),0xAD7n,'arithmetic preserves EFLAGS');cases++;
+}
+console.log(`${cases} x87 register arithmetic cases passed, including operand order and wrapped stack tops.`);

@@ -613,7 +613,8 @@ U0 OpX87(U64 op)
     if (sub == 2 || sub == 3) { FCmpSW(a, b); if (sub == 3) FPopv(); }
     else if (sub == 0) FStset(0, a + b); else if (sub == 1) FStset(0, a * b); else if (sub == 4) FStset(0, a - b); else if (sub == 5) FStset(0, b - a); else if (sub == 6) FStset(0, a / b); else FStset(0, b / a);
   } else if (op == 0xDC) {
-    a = FStv(sti); b = FStv(0); if (sub == 0) FStset(sti, a + b); else if (sub == 1) FStset(sti, a * b); else if (sub == 4) FStset(sti, a - b); else if (sub == 5) FStset(sti, b - a); else if (sub == 6) FStset(sti, a / b); else if (sub == 7) FStset(sti, b / a);
+    // Register-destination encodings reverse /4 vs /5 and /6 vs /7.
+    a = FStv(sti); b = FStv(0); if (sub == 0) FStset(sti, a + b); else if (sub == 1) FStset(sti, a * b); else if (sub == 4) FStset(sti, b - a); else if (sub == 5) FStset(sti, a - b); else if (sub == 6) FStset(sti, b / a); else if (sub == 7) FStset(sti, a / b);
   } else if (op == 0xDD) {
     if (sub == 2) FStset(sti, FStv(0));                             // FST  st(i)
     else if (sub == 3) { FStset(sti, FStv(0)); FPopv(); }          // FSTP st(i)
@@ -622,8 +623,8 @@ U0 OpX87(U64 op)
     a = FStv(sti); b = FStv(0);
     if (sub == 3) { FCmpSW(FStv(0), FStv(1)); FPopv(); FPopv(); }   // FCOMPP
     else { if (sub == 0) FStset(sti, a + b); else if (sub == 1) FStset(sti, a * b);
-           else if (sub == 4) FStset(sti, a - b); else if (sub == 5) FStset(sti, b - a);
-           else if (sub == 6) FStset(sti, a / b); else FStset(sti, b / a); FPopv(); }      // ...P
+           else if (sub == 4) FStset(sti, b - a); else if (sub == 5) FStset(sti, a - b);
+           else if (sub == 6) FStset(sti, b / a); else FStset(sti, a / b); FPopv(); }      // ...P
   } else if (op == 0xDB) {
     if (sub == 4) { if (sti == 3) { fsp = 0; x87_cw = 0x37F; x87_sw = 0; } }  // FNINIT (also FNCLEX etc -> reset-ish)
     else if (sub == 6) { FCmpFL(FStv(0), FStv(sti)); }                        // FCOMI st0,st(i)

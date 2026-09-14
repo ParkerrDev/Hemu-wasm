@@ -81,6 +81,15 @@ if (!probe.ok) { console.log(JSON.stringify(results)); process.exit(1); }
 const info0 = gx.info();
 say("focus: " + JSON.stringify(info0.focus) + " adam: " + JSON.stringify({ name: info0.adam.name, idle: info0.adam.idle, awaitingMsg: info0.adam.awaitingMsg, jobsWaiting: info0.adam.jobsWaiting }));
 
+// Ask the guest compiler for the field addresses independently of our metadata probe.
+const DISPLAY_A = gx.scratch.base + 0xA20, DISPLAY_B = DISPLAY_A + 8;
+const displayJob = gx.exec({id:"display-fields", src:`*(0x${DISPLAY_A.toString(16)})(U8**)=&winmgr.fps;*(0x${DISPLAY_B.toString(16)})(U8**)=&winmgr.updates;`, target:"adam"});
+await waitState(displayJob, finalStates, 600);
+const displayStats = gx.frameStats(), fpsAddr = gx.rd64(DISPLAY_A), updatesAddr = gx.rd64(DISPLAY_B);
+check("FPS metadata matches the guest compiler's winmgr fields", gx.status(displayJob).state === "done" && displayStats?.fps > 0 && fpsAddr > 0 && updatesAddr > 0 && displayStats.fps === dv().getFloat64(gBase + fpsAddr, true) && displayStats.updates === gx.rd64(updatesAddr), JSON.stringify(displayStats));
+await run(30);
+check("FPS update sequence advances with guest rendering", gx.frameStats()?.updates > displayStats?.updates, JSON.stringify(gx.frameStats()));
+
 // ---- T1: execute source in Adam (silent), observe the side effect in the scratch window ----
 const PROBE_A = gx.scratch.base + 0xA00;
 gx.wr64(PROBE_A, 0);
