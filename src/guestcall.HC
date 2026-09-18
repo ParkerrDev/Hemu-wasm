@@ -19,8 +19,7 @@
 // budget is reported as FAILED and the interrupted state is still restored (its frame below RSP is
 // dead space by the x86 convention, so abandoning it is harmless).
 //============================================================================
-// GC_* state/error codes are #defined in snapshot.HC (holyc-wasm's preprocessor only propagates defines
-// downward into includes, and cpu.HC's Run() tests GC_PENDING).
+// GC_* state/error codes are #defined in core.HC (cpu.HC's Run() tests GC_PENDING too).
 U64 g_gc_fn, g_gc_args[8], g_gc_sentinel, g_gc_res;
 I64 g_gc_argc, g_gc_state, g_gc_err, g_gc_budget, g_gc_steps, g_gc_calls, g_gc_savlock, g_gc_savbad;
 U64 g_gc_save[55], g_gc_savx[32];    // CCpuState image (440 bytes = 55 U64, see snapshot.HC) + XMM lo/hi
